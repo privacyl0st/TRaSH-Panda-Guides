@@ -1,0 +1,30 @@
+====== Prowlarr Indexer Proxy Coordination ======
+
+Prowlarr acts as the central intelligence hub for the ecosystem. Rather than manually configuring torrent sites inside Sonarr, Radarr, and Lidarr individually, Prowlarr manages the indexers centrally and pushes the configurations down to the ARR apps via API.
+
+Prowlarr operates on the Acquisition Server (VM-A) and listens on **TCP Port 9696**.
+
+===== 1. Installation & Service Creation =====
+Because standard Linux repositories do not host Prowlarr, it must be downloaded from the official GitHub releases and installed directly into the `/opt/` directory. 
+
+*(For raw installation bash commands, refer to [[reference:scripts|Core Automation Scripts]] or the official Servarr wiki).*
+
+Ensure the service is running under a dedicated `prowlarr` system user and `systemctl status prowlarr` reports as active.
+
+===== 2. Application Synchronization (The API Web) =====
+To allow Prowlarr to inject configurations into your other applications, you must establish API handshakes.
+
+Navigate to **Settings → Apps** within the Prowlarr WebUI (http://<ACQUISITION_SERVER_IP>:9696).
+
+For each downstream application (Sonarr, Radarr, Lidarr):
+  - Click the **+** (Add) button.
+  - Set the **Sync Level** to `Full Sync` (This allows Prowlarr to modify and delete indexers, not just add them).
+  - Input the target application's local IP address (e.g., `http://localhost:8989` for Sonarr).
+  - Paste the 32-character Hex API Key generated from the target application's settings menu.
+
+===== 3. Indexer Configuration & VPN Proxy Routing =====
+When adding indexers (torrent trackers), you must ensure their API queries do not leak your actual IP address to the tracker's servers.
+
+Because Prowlarr runs natively on the Acquisition Server alongside NordVPN, its traffic is automatically enveloped by the `iptables` kill-switch rules configured in [[services:vpn_tunnel]]. No secondary SOCKS5 proxy configuration is required within the Prowlarr UI, provided the host's default route is successfully captured by the `nordlynx` interface.
+
+**Next Step:** Begin deploying the specific media acquisition apps, starting with [[services:sonarr|Sonarr (TV Acquisition)]].

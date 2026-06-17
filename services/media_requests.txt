@@ -1,0 +1,42 @@
+====== Overseerr (Media Request Server) ======
+
+Overseerr acts as the public-facing dashboard. Family and friends will log into this web portal to request movies and television shows. 
+
+**Architectural Guardrail:** Overseerr resides on **VM-B (The Front-End Boundary)** inside the **VLAN 20 DMZ**. It communicates with the protected ARR stack on VLAN 10 through the strict stateful firewall pinholes established in [[network:firewall_acls]].
+
+===== 1. Node.js & Application Deployment =====
+Install Overseerr natively on VM-B. It will listen locally on **TCP Port 5055**.
+
+<file bash>
+curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+sudo apt install -y nodejs
+git clone https://github.com/sct/overseerr.git /opt/overseerr
+cd /opt/overseerr
+npm install
+npm run build
+</file>
+
+Create the systemd unit `overseerr.service` mapped to the standard `/opt/overseerr` startup commands, and enable it to start on boot.
+
+===== 2. Plex OAuth Integration =====
+Navigate to `http://<VM-B_IP>:5055`. Overseerr does not use localized accounts. Users authenticate utilizing their existing Plex.tv credentials.
+
+  - Select **Sign In with Plex**.
+  - Login with your administrator Plex account.
+  - Navigate to **Settings → Users** and configure the default permissions for newly authenticated users (e.g., Enable "Auto-Approve Movie Requests" but leave TV requests manual).
+
+===== 3. Cross-VLAN API Routing =====
+To push approved requests to the download engines, you must map the ARR stack. 
+
+Navigate to **Settings → Services**:
+  - **Add Radarr:** - IP Address: `192.168.10.15` (The VLAN 10 Acquisition Host)
+    - Port: `7878`
+    - API Key: Paste the 32-character Radarr API Key.
+  - **Add Sonarr:**
+    - IP Address: `192.168.10.15` 
+    - Port: `8989`
+    - API Key: Paste the 32-character Sonarr API Key.
+
+//Testing Note: If you click "Test" and the connection fails, verify your [[network:firewall_acls|DMZ-to-LAN Pinhole ACLs]] are correctly routing TCP 7878 and 8989 traffic through your core gateway.//
+
+**Next Step:** Deploy the heavy processing engine in [[services:plex_engine|Plex Media Server]].

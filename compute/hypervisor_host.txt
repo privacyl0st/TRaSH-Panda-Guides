@@ -1,0 +1,83 @@
+====== Hypervisor Host Deployment ======
+
+Because your hypervisor runs as a Type-2 deployment on top of a standard workstation operating system, the underlying Windows 11 Professional host must be hardened and optimized. This ensures sustained virtual machine uptime and absolute management plane isolation.
+
+===== Part 1: Host Operating System Hardening & Optimization =====
+
+==== Power and Performance Policies ====
+To prevent the Windows kernel from throttling active compute threads, putting hardware assets to sleep, or introducing I/O latency to background applications:
+  - **System Sleep Suppression:** Navigate to **Settings → System → Power & Sleep**. Configure the system state to **Never Sleep** when plugged in.
+  - **Processor Topology Optimization:** Open the classic **Control Panel** and navigate to **Power Options**. Enforce the **High Performance** power plan to keep the CPU out of low-frequency C-states.
+  - **Storage Bus Preservation:** Open advanced power plan settings, expand the USB settings tree, and set **USB selective suspend setting** to **Disabled**. This prevents Windows from power-cycling external USB-C backup arrays during extended nightly archive cycles.
+
+==== OS Isolation via Network Interface Card (NIC) Binding ====
+To achieve true physical isolation across your VLAN boundaries, you must unbind the Windows network driver stack from the physical network adapters reserved exclusively for guest virtual machines. 
+
+  - Execute ''ncpa.cpl'' via the Windows Run dialog (Win+R) to open Network Connections.
+  - Identify your physical network interfaces and apply the following binding profiles:
+
+**NIC 1 (VLAN 10 - Management / Production):** Leave all default protocols enabled. The host OS utilizes this interface natively for local area network access and system administration.
+
+**NIC 2 (VLAN 20 - Public Facing / DMZ) & NIC 3 (VLAN 50 - Storage Fabric):**
+Right-click the adapter and select Properties. **Uncheck all protocol items except for the VMware Bridge Protocol.** This permanently blocks the host OS from directly accessing the raw storage area network or the DMZ.
+
+<file>
+Physical NIC Adapter Properties (Windows 11 Host: NIC 2 & NIC 3)
+[ ] Client for Microsoft Networks                 <-- UNCHECKED
+[ ] File and Printer Sharing                      <-- UNCHECKED
+[ ] Internet Protocol Version 4 (TCP/IPv4)        <-- UNCHECKED
+( ) Internet Protocol Version 6 (TCP/IPv6)        <-- UNCHECKED
+[X] VMware Bridge Protocol                        <-- CHECKED FOR ALL NICS
+</file>
+
+===== Part 2: Hypervisor Network Architecture Configuration =====
+Launch the **Virtual Network Editor** with elevated administrative privileges (Run as Administrator) and configure three explicit bridged networks to map clean Layer 2 segments to the guest VMs:
+
+  * **VMnet0 (Bridged to VLAN 10):** Network Type: Bridged. Change "Bridge to" from Automatic to the exact hardware name of your physical NIC 1.
+  * **VMnet2 (Bridged to VLAN 20):** Network Type: Bridged. Change "Bridge to" to the exact hardware name of your physical NIC 2.
+  * **VMnet3 (Bridged to VLAN 50):** Network Type: Bridged. Change "Bridge to" to the exact hardware name of your physical NIC 3.
+
+**Architectural Guardrail:** Ensure that all default Host-Only and NAT networks (such as VMnet1 and VMnet8) are deleted, completely disabled, or left unassigned.
+
+===== Part 3: Host-Wide Hypervisor Baseline Settings =====
+Modify global hypervisor preferences to protect system memory spaces:
+  - Navigate to **Edit -> Preferences -> Memory**. Select **Fit all virtual machine memory into reserved host RAM**. This prevents the Windows host OS from swapping active VM memory spaces onto a slow disk pagefile.
+  - Navigate to **Preferences -> Priority**. Set **Input grabbed** to **High** and **Input ungrabbed** to **Normal**. 
+  - Check the box for **Keep VMs running after closing Workstation**. This ensures background server daemons remain fully operational when the GUI is closed.
+
+===== Part 4: Guest Virtual Hardware Provisioning Blueprints =====
+
+==== Blueprint 1: Media Acquisition Server (VM-A) ====
+  * **Guest OS:** Ubuntu Linux 24.04 LTS
+  * **Compute:** 2 vCPU Cores, 8GB Static RAM
+  * **Storage:** 64GB Thin-Provisioned Virtual Disk
+  * **Networking:** * Network Adapter 1: Custom → VMnet0 (VLAN 10 Access)
+    * Network Adapter 2: Custom → VMnet3 (VLAN 50 Access)
+
+==== Blueprint 2: Request Services Server (VM-B) ====
+  * **Guest OS:** Ubuntu Linux 24.04 LTS
+  * **Compute:** 2 vCPU Cores, 4GB Static RAM
+  * **Storage:** 40GB Thin-Provisioned Virtual Disk
+  * **Networking:** * Network Adapter 1: Custom → VMnet2 (VLAN 20 Access)
+
+==== Blueprint 3: Veeam Infrastructure Protection Server (VM-C) ====
+  * **Guest OS:** Windows Server 2022
+  * **Compute:** 4 vCPU Cores, 16GB RAM
+  * **Storage:** 100GB Thin-Provisioned Virtual Disk
+  * **Networking:** Network Adapter 1: Custom → VMnet0 (VLAN 10 Access)
+  * **USB Controller:** Configure to **USB 3.1** and enable **Show all USB input devices** for direct physical hardware passthrough.
+
+===== Part 5: Guest Initialization & Component Installs =====
+Following OS deployment, execute these foundational integrations to lock down hypervisor-to-kernel communication.
+
+==== VMware Tools Execution & Kernel Synchronization ====
+For Linux Guests (VM-A & VM-B), avoid mounting legacy virtual ISOs. Update your repository indices and install the optimized, open-source guest daemon package natively:
+<code>
+sudo apt update && sudo apt install open-vm-tools
+</code>
+For Windows Server Guests (VM-C), mount the native VMware Tools installer package from the Workstation application control menu.
+
+==== System Time Synchronization Baseline ====
+  - Open the configuration panel for each Virtual Machine, navigate to the **Options** tab, and select **VMware Tools**.
+  - Check the box to **Synchronize guest time with host**. 
+  - //Rationale: This forces all independent guest virtual machines to use your physical workstation's real-time clock, preventing time-drift errors across logs, tracking databases, and automated backup schedules.//

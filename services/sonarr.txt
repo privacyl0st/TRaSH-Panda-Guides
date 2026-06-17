@@ -1,0 +1,37 @@
+====== Sonarr (TV Acquisition & Management) ======
+
+Sonarr automates the monitoring, downloading, and renaming of episodic television content. It operates on the Acquisition Server (VM-A) and listens on **TCP Port 8989**.
+
+===== 1. Installation & API Key Generation =====
+Install Sonarr natively into `/opt/Sonarr` and configure its systemd unit.
+
+Once active, navigate to **Settings → General** and locate the **API Key**. 
+//Note: You must copy this 32-character hex string and paste it into Prowlarr and Overseerr to establish inter-app communication.//
+
+===== 2. Storage Mapping & Hardlink Enforcement =====
+Sonarr must be able to instruct qBittorrent to download a file, and then instantly "move" that file to the final media folder without duplicating the data on the disk.
+
+Navigate to **Settings → Media Management**:
+  - **Show Advanced Settings:** Enabled.
+  - **Use Hardlinks instead of Copy:** Check this box (CRITICAL).
+  - **Root Folder:** Add `/mnt/data/media/tv/`.
+
+//Architectural Guardrail: Hardlinks only work if the source file (in `/torrents/`) and the destination file (in `/media/tv/`) reside on the exact same underlying file system. This is why we enforced the single `/volume1/data` root in the [[storage:nfs_fabric]] blueprint.//
+
+===== 3. Quality Profiles (The 1080p Cap) =====
+To prevent a single television series featuring hundreds of episodes from exhausting your storage array, we enforce strict resolution and bitrate caps.
+
+Navigate to **Settings → Profiles**:
+  - Delete all default profiles except **Any**.
+  - Rename **Any** to **Standard 1080p/720p**.
+  - Edit the profile to explicitly **Disable** all 2160p (4K), RAW-HD, and Remux qualities.
+  - Arrange the priority order: `1080p WEB-DL` > `1080p HDTV` > `720p WEB-DL` > `720p HDTV`.
+
+===== 4. Download Client Integration =====
+Navigate to **Settings → Download Clients**:
+  - Add qBittorrent.
+  - **Host:** `localhost`
+  - **Port:** `8023`
+  - **Category:** `tv-sonarr` (This tags the torrent in qBittorrent so Cleanuparr knows which application owns the file lifecycle).
+
+**Next Step:** Deploy the movie equivalent in [[services:radarr|Radarr (Movie Acquisition)]].

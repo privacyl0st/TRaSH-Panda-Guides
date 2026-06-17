@@ -1,0 +1,54 @@
+====== TRaSH Panda Guides: Building a Fully Automated Home Media Ecosystem ======
+
+Welcome to the **TRaSH Panda Guides**—the definitive implementation blueprint for designing, securing, and deploying an enterprise-grade home media ecosystem. 
+
+While the legendary TRaSH Guides taught the community how to perfectly tune applications for the highest quality media, the TRaSH Panda takes a step back to engineer the forest they live in. This guide isn't just about configuring the ARR stack; it is about building the decoupled, multi-VLAN infrastructure that securely houses it.
+
+**Disclaimer:** //This document is strictly an infrastructure guide intended for educational, technical, and academic purposes. It does not provide links, access points, indexing details, or instructions for obtaining copyrighted content.//
+
+===== The Monolithic Problem vs. The Decoupled Architecture =====
+Most conventional home media deployments are essentially digital dumpsters—fragile, monolithic architectures running on a single, overburdened server with dangerously permissive directory permissions (chmod 777). While a raccoon might love a messy dumpster, this centralized approach creates a massive single point of failure and represents a significant cybersecurity vulnerability.
+
+The TRaSH Panda blueprint introduces a fundamentally different approach: a **decoupled, secure, and self-sustaining media architecture**. It cleans up the chaos by segregating operations into four strictly isolated functional pillars:
+
+  * **The Vault (Storage):** A hardened Network Attached Storage (NAS) layer isolated on a dedicated, non-routable storage area network.
+  * **The Brains (Acquisition):** Automated content aggregation via the ARR suite, firewalled from public-facing exposure and routed over a strict VPN kill-switch.
+  * **The Brawn (Processing):** Distributed transcoding and media optimization automated via Unmanic to ensure maximum compatibility and storage efficiency.
+  * **The Guard (Delivery & Security):** High-availability local and remote media streaming via Plex Media Server, sandboxed within a secure Demilitarized Zone (DMZ), shielded by a dedicated Edge Proxy.
+
+===== Master Ecosystem Architecture Topology =====
+
+<mermaid>
+graph TD
+    PublicInternet((Public Internet)) -->|Port 80/443| EdgeProxy[NGINX Edge Reverse Proxy<br>Raspberry Pi 5]
+    
+    subgraph VLAN 20: Hardened DMZ 10.0.20.0/24
+        EdgeProxy --> MediaRequest[Media Request Server VM-B<br>Overseerr]
+        EdgeProxy --> PlexEngine[PLEX Media Server<br>Bare-Metal Engine]
+        Unmanic[Unmanic Optimization Engine<br>NVIDIA RTX 3050 GPU] -.-> PlexEngine
+    end
+
+    MediaRequest ==>|Stateful Pinhole TCP 7878/8989/8686| Firewall{Firewall Access Control Barrier<br>Default Deny Posture}
+    PlexEngine -->|Reads| Firewall
+
+    subgraph VLAN 10: Trusted Management LAN 192.168.10.0/24
+        Firewall ==> Acquisition[Media Acquisition Server VM-A<br>Prowlarr, Sonarr, Radarr, Lidarr]
+        Firewall --> Veeam[Disaster Recovery Host VM-C<br>Veeam Backup]
+    end
+
+    Acquisition ==>|NFS Write Path| StorageFabric
+    Firewall -->|NFS Read/Transcode Path| StorageFabric
+
+    subgraph VLAN 50: Isolated Storage Network 10.0.50.0/24
+        StorageFabric[(Synology 4-Bay NAS Array<br>Unified Root Mount: /volume1/data)]
+    end
+</mermaid>
+
+===== The Vision: Resourceful & Pragmatic =====
+Raccoons are the ultimate pragmatists, and this architecture reflects that trait. While elite enthusiast blueprints often mandate massive storage arrays and gigabit fiber for uncompressed 4K HDR Blu-ray remuxes, the TRaSH Panda architecture is a highly capable, resourceful alternative designed to maximize the hardware you actually have:
+
+  * **Public Trackers vs. Private Trackers:** Optimized for public trackers, leveraging aggressive automated cleanup tools ([[services:maintenance_engines|Cleanuparr]]) and strict parsing to mitigate malware risks.
+  * **1080p Cap vs. 4K Remuxes:** Capping acquisition at high-quality 1080p/720p profiles prevents storage exhaustion and network saturation.
+  * **Automated GPU Transcoding:** Uses hardware-accelerated GPU compute ([[services:unmanic|Unmanic]]) to dynamically transcode bloated legacy H.264 files into space-saving H.265 (HEVC) formats.
+
+**Next Step:** Proceed to the [[architecture:deployment_sequence|Deployment Sequence Checklist]].

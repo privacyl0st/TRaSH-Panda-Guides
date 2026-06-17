@@ -1,0 +1,15 @@
+====== Ecosystem Glossary ======
+
+Due to the convergence of networking, storage, and application engineering, this architecture utilizes highly specific terminology.
+
+  * **API (Application Programming Interface):** The 32-character hex strings that allow separated applications (like Overseerr and Sonarr) to communicate and send commands across VLAN boundaries.
+  * **ARR Stack:** The collective community term for the automated media acquisition suites (Sonarr, Radarr, Lidarr, Prowlarr, Readarr).
+  * **Atomic Hardlink:** A filesystem feature where multiple files in different directories point to the exact same physical data block on a hard drive. Crucial for preventing storage waste between `/torrents/` and `/media/`.
+  * **Btrfs (B-Tree File System):** An advanced, copy-on-write storage format utilized on the NAS that provides built-in protection against data corruption (bit-rot) and supports instant snapshots.
+  * **DMZ (Demilitarized Zone - VLAN 20):** A highly restricted sub-network that exposes external-facing services to the public internet while blocking those compromised services from accessing the secure internal network.
+  * **Kill-Switch:** An `iptables` firewall constraint that completely severs a machine's internet access if the VPN tunnel collapses, preventing the host's true public IP address from leaking to torrent swarms.
+  * **NordLynx:** NordVPN's proprietary implementation of the WireGuard protocol, offering significantly higher speeds and lower CPU overhead compared to legacy OpenVPN.
+  * **NVENC:** NVIDIA's hardware-based video encoding pipeline. Utilized by Plex and Unmanic to transcode video files using the GPU's dedicated silicon rather than taxing the system CPU.
+  * **RSTP (Rapid Spanning Tree Protocol):** A Layer 2 network protocol that prevents broadcast storms and network loops by logically blocking redundant switch paths.
+  * **Squash Rules:** NFS security policies that map an incoming client's user permissions. "No Mapping" allows a client to act as `root`, while "Map All Users to Admin" forces the client to adopt a specific identity on the NAS.
+  * **Stateful Pinhole:** A firewall rule that allows traffic from a high-security zone (VLAN 10) to reply back to a low-security zone (VLAN 20) ONLY if the connection was initiated by the high-security zone first.

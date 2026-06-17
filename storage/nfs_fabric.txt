@@ -1,0 +1,37 @@
+====== NFS Fabric & Endpoint Mounting ======
+
+To safeguard your persistent data assets, the storage array must project its network shares exclusively down your non-routable storage plane (VLAN 50). Compute nodes will access this fabric using hardened FSTAB mounting rules.
+
+===== 1. Granular NFS Export Security Policies =====
+Navigate to your NAS Shared Folder configuration menu, highlight the ''/volume1/data'' directory, select Edit, and switch to the **NFS Permissions** tab. Create explicit access definitions targeting your individual compute hosts:
+
+^ Target Client Host ^ Target Net Interface ^ Static IP ^ Access Privilege ^ Squash Rule ^ Async Operations ^
+| **Media Server (Plex)** | Physical NIC 2 (VLAN 50) | ''10.0.50.50/32'' | Read/Write | **No Mapping** (Direct Root Control) | Yes (Enhanced Throughput) |
+| **Acquisition Server** | Guest vNIC 2 (VMnet3) | ''10.0.50.15/32'' | Read/Write | **Map All Users to Admin** (UID/GID Sync) | Yes (Enhanced Throughput) |
+
+**Security Enforcement Modifier:** For the Acquisition Server (10.0.50.15) access rule, you must explicitly enable **Allow users to access root subfolders**. This authorizes your nested Docker container layers to safely traverse and write across the deep, nested subfolder tree structure.
+
+===== 2. End-Point Mount Orchestration (Linux Systems) =====
+For your bare-metal and virtual Linux nodes consuming your assets over the storage fabric, mount points must be managed systematically to survive restarts.
+
+==== Client Prerequisite Installation ====
+Execute the native network file sharing client utilities on both targeted Ubuntu endpoints (Media Engine and Acquisition VM) via the terminal:
+
+<file bash>
+sudo apt update && sudo apt install nfs-common -y
+</file>
+
+==== Permanent Mount Configuration (FSTAB) ====
+To guarantee storage attachments securely survive system reboots or hypervisor service cycles without requiring manual remounting commands, create a local directory path (''/mnt/data'') and append the following performance-tuned mount configuration string to the absolute bottom of your ''/etc/fstab'' system initialization file.
+
+<file bash /etc/fstab>
+# Add to the bottom of the file
+10.0.50.200:/volume1/data /mnt/data nfs rw,noatime,rsize=131072,wsize=131072,tcp,timeo=14,intr 0 0
+</file>
+
+==== Technical Breakdown of Optimization Arguments ====
+  * **noatime:** Disables file access timestamp updates every time a file is read. This completely removes unnecessary metadata write amplification back to the mechanical spinning disk array, maximizing drive longevity.
+  * **rsize=131072 / wsize=131072:** Hardcodes the network read/write network packet blocks to a massive 128KB payload footprint, matching ideal specifications for high-bitrate continuous media streams.
+  * **intr:** Allows running processes to gracefully interrupt a pending storage call if the network experiences a brief latency spike or a drive parity recalculation, preventing application threads from freezing indefinitely.
+
+**Next Step:** With the host environments and storage fabric active, begin deploying applications in [[services:vpn_tunnel|NordVPN Tunnel Engine]].

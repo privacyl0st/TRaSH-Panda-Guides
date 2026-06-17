@@ -1,0 +1,25 @@
+====== Edge Proxy Architecture Setup (The Guard) ======
+
+This section covers the base OS layout for the low-power Single Board Computer (Raspberry Pi 5 ARM64) serving as your single public-facing entryway. 
+
+===== 1. Base OS Preparation =====
+  - **OS Flashing:** Open the official Raspberry Pi Imager tool. Select **Ubuntu Server 24.04 LTS (ARM64)** and flash it to your PCIe Gen 4 NVMe storage module (or high-endurance SD card).
+  - **Physical Connectivity:** Wire the Pi's integrated 1Gbps Ethernet adapter directly to a switch access port assigned exclusively to the **VLAN 20 DMZ**.
+  - **Static IP Assignment:** Apply a DHCP reservation lease in your core firewall gateway or define a local Netplan static block using a valid IP address inside the DMZ range (e.g., ''10.0.20.5/24'').
+
+===== 2. Architecture Adaptation (ARM64 Layout Adjustments) =====
+Because the Raspberry Pi utilizes an ARM64 processing architecture, standard x86_64 parameters require slight tuning modifications to ensure hardware parity.
+
+==== PCIe Bus Speed Tuning ====
+If you are utilizing an NVMe hardware HAT, open your bootloader firmware settings file to unlock full PCIe Gen 3 data transfer rates across the bus.
+
+Open ''/boot/firmware/config.txt'' and append the following lines:
+<file bash /boot/firmware/config.txt>
+dtparam=pciex1
+dtparam=pciex1_gen=3
+</file>
+
+==== Repository Validation ====
+Confirm that the standard ARM64 APT package lists are active. This permits the native execution of lightweight edge tools (nginx-light or nginx-full) and certbot without forcing the hardware to run slow, emulated x86 instruction translation layers.
+
+**Next Step:** Ensure your global optimizations are applied via [[compute:linux_baselines|Universal Linux Baselines]].

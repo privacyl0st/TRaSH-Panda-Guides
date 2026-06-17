@@ -1,0 +1,50 @@
+====== Troubleshooting & Health Diagnostics ======
+
+Due to the highly segmented nature of this architecture, standard single-host troubleshooting logic does not apply. When an application fails, the fault could lie at the container, host OS, hypervisor, or firewall gateway layer.
+
+Use these validated diagnostic procedures to isolate and resolve ecosystem faults.
+
+===== 1. The VPN & Network Layer (VLAN 10) =====
+
+**Symptom:** qBittorrent downloads are completely stalled, or Prowlarr fails to connect to indexers.
+  * **Diagnostic Check (DNS Leak & Routing):** SSH into the Acquisition Server (VM-A) and execute a manual curl against a public IP checker using the VPN interface.
+    <code>curl --interface nordlynx ifconfig.me</code>
+  * **Resolution:** If the command times out, the VPN handshake has failed, but the kill-switch is correctly preventing raw traffic from escaping. Restart the daemon: `sudo systemctl restart nordvpnd`
+
+**Symptom:** Overseerr (VLAN 20) displays a "Failed to connect to Radarr/Sonarr" error.
+  * **Diagnostic Check (Cross-VLAN Pinhole):**
+    SSH into the Edge Proxy Node (VM-B) and attempt a raw socket connection to the target port on VLAN 10.
+    <code>nc -zv 192.168.10.15 7878</code>
+  * **Resolution:** If the connection is `REFUSED` or `TIMEOUT`, your core gateway firewall ACLs have dropped the packet. Verify [[network:firewall_acls|Rule 203 (Stateful Pinhole)]] is active and positioned above the "Drop All" rule.
+
+===== 2. The Storage Fabric (VLAN 50) =====
+
+**Symptom:** Plex media libraries appear empty, or Sonarr throws an "Import Failed: Destination is read-only" error.
+  * **Diagnostic Check (Stale File Handles):**
+    SSH into the affected compute node (Media Engine or Acquisition Server) and check the NFS mount status.
+    <code>df -h | grep /mnt/data</code>
+  * **Resolution:** If the command hangs indefinitely, the NFS fabric has suffered a stale file handle (usually caused by rebooting the NAS without unmounting the clients first). Force unmount and remount:
+    <code>
+    sudo umount -f -l /mnt/data
+    sudo mount -a
+    </code>
+
+===== 3. The Reverse Proxy & Ingress (VLAN 20) =====
+
+**Symptom:** Accessing `request.yourdomain.com` results in a **502 Bad Gateway** error.
+  * **Diagnostic Check (Backend Availability):** This means NGINX is working, but the backend application (Overseerr) is dead. Verify Overseerr is running on VM-B:
+    <code>sudo systemctl status overseerr</code>
+  * **Resolution:** If Overseerr is active, verify the buffer sizes in [[security:nginx_edge|nginx.conf]]. Large image headers from the Overseerr API often exceed default NGINX buffer sizes, causing silent proxy drops.
+
+**Symptom:** Accessing `request.yourdomain.com` results in a **504 Gateway Timeout**.
+  * **Resolution:** This means NGINX cannot even reach VM-B. Check the local firewall on VM-B (`sudo ufw status`) to ensure TCP Port 5055 is permitted from the Edge Proxy IP (10.0.20.5).
+
+===== 4. Hardware Transcoding (The Brawn) =====
+
+**Symptom:** Plex dashboard shows `Transcode (Software)` instead of `Transcode (hw)`, causing CPU usage to spike to 100%.
+  * **Diagnostic Check (NVIDIA Drivers):**
+    SSH into Physical Host 2 and verify the kernel recognizes the GPU.
+    <code>nvidia-smi</code>
+  * **Resolution:** If `nvidia-smi` fails to output a table, the proprietary drivers have crashed following an unattended OS kernel update. Reinstall the drivers via [[compute:media_engine|Media Engine Provisioning]] and reboot.
+
+**Next Step:** Review how to safely power cycle this infrastructure in [[operations:power_states|Emergency Power States & Cold Boots]].

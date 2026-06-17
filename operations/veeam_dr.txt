@@ -1,0 +1,30 @@
+====== Veeam CE Disaster Recovery Orchestration ======
+
+Raid is not a backup. To protect the hypervisor configurations, Docker states, and critical application databases (Prowlarr, Sonarr, Plex), we utilize Veeam Backup & Replication Community Edition running on **VM-C (Windows Server 2022)**.
+
+===== 1. Multi-Tier Storage Strategy =====
+Veeam coordinates backups using the 3-2-1 principle:
+  * **Tier 1 (Production):** The active SSDs running the virtual machines.
+  * **Tier 2 (Local Archive):** The Synology NAS Array (VLAN 10 interface). Veeam pushes compressed image-level backups of the VMs here nightly.
+  * **Tier 3 (Offline / Air-Gapped):** An external USB 3.1 HDD directly attached to the Hypervisor Host and passed through into VM-C via VMware. Veeam executes a "Backup Copy" job to this drive, protecting the data from catastrophic network ransomware encryption.
+
+===== 2. Virtual Machine Backup Jobs =====
+Deploy the Veeam Agent for Linux to VM-A and VM-B, and the Veeam Agent for Windows to the host machine. 
+
+Create an Image-Level Backup Job targeting your Linux VMs:
+  - **Mode:** Entire Computer (Volume Level).
+  - **Destination:** Your mapped Synology NAS Backup Repository.
+  - **Schedule:** Run daily at 03:00 AM.
+  - **Retention:** Keep 7 days of restore points.
+
+===== 3. Application Quiescence (Pre/Post Scripts) =====
+**CRITICAL:** Taking a block-level snapshot of a live database (like Plex's SQLite or Sonarr's .NET db) while a write-operation is occurring will result in a corrupted backup file. 
+
+To prevent this, Veeam must execute shell scripts immediately before taking the snapshot to gracefully freeze the applications.
+
+Navigate to the **Guest Processing** tab of your Veeam Backup Job, enable Application-Aware Processing, and inject the scripts located in your [[reference:scripts#veeam-prepost|Reference Scripts Library]]:
+
+  * **Pre-Freeze Script (`veeam_pre_job.sh`):** Drops the NordVPN tunnel gracefully to prevent routing crashes, stops the ARR stack systemd services, and pauses Docker containers.
+  * **Post-Thaw Script (`veeam_post_job.sh`):** Restarts the daemons, unpauses Docker, and re-establishes the VPN tunnel kill-switch after the snapshot finishes.
+
+**Next Step:** Implement background health checks in [[operations:automated_maintenance|Automated Maintenance & Watchdogs]].

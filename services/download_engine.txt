@@ -1,0 +1,58 @@
+====== qBittorrent-nox Headless Configuration ======
+
+The download engine executes the actual peer-to-peer file acquisition. We utilize `qBittorrent-nox`, a headless daemon devoid of a desktop GUI, managed entirely via a web interface running on **TCP Port 8023**.
+
+===== 1. Security Context & Installation =====
+Never run a public-facing torrent daemon as the `root` user. Create a dedicated, unprivileged system user (`qbituser`) before installation.
+
+<file bash>
+sudo adduser --system --group qbituser
+sudo apt update && sudo apt install qbittorrent-nox -y
+</file>
+
+Ensure `qbituser` has explicit read/write access to the NFS mount created in [[storage:nfs_fabric]]. (Refer to the [[reference:iam_matrix|IAM Permissions Matrix]] for detailed GID/UID matching).
+
+===== 2. Systemd Service Orchestration =====
+Create a native systemd unit file to ensure the daemon automatically starts on boot and restarts in the event of a crash.
+
+<code>
+sudo nano /etc/systemd/system/qbittorrent-nox.service
+</code>
+
+<file bash /etc/systemd/system/qbittorrent-nox.service>
+[Unit]
+Description=qBittorrent Command Line Client
+After=network.target
+
+[Service]
+Type=forking
+User=qbituser
+Group=qbituser
+UMask=002
+ExecStart=/usr/bin/qbittorrent-nox -d --webui-port=8023
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+</file>
+
+Enable and start the service:
+<code>
+sudo systemctl daemon-reload
+sudo systemctl enable --now qbittorrent-nox
+</code>
+
+===== 3. Interface Binding (The Absolute Guardrail) =====
+While the NordVPN kill-switch provides routing-level protection, application-level binding provides a mandatory secondary defense layer. If the VPN drops, qBittorrent must become completely deaf and blind to the network.
+
+  - Navigate to the WebUI at `http://<ACQUISITION_SERVER_IP>:8023`.
+  - Go to **Tools → Options → Advanced**.
+  - **Network Interface:** Change from `Any interface` to explicitly select `nordlynx`.
+  - **Optional IP Address Binding:** Set to `All IPv4 addresses`.
+
+===== 4. Directory Mapping =====
+Within the WebUI **Downloads** settings, map your default save paths directly to your NFS storage fabric:
+  * **Default Save Path:** `/mnt/data/torrents/completed/`
+  * **Keep Incomplete Torrents In:** `/mnt/data/torrents/incomplete/`
+
+**Next Step:** Deploy the indexer coordination layer in [[services:indexer_proxy|Prowlarr Indexer Proxy]].

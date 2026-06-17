@@ -1,0 +1,77 @@
+====== NGINX Edge Reverse Proxy (The Guard) ======
+
+Rather than punching dozens of port forwarding holes through your firewall for individual applications, this architecture utilizes a single, hardened entry point. The NGINX reverse proxy resides on **Physical Host 4 (Raspberry Pi Edge Proxy)** in the **VLAN 20 DMZ**.
+
+===== 1. Core Installation =====
+Connect to your Edge Proxy node (''10.0.20.5'') and deploy the lightweight NGINX package:
+
+<file bash>
+sudo apt update && sudo apt install nginx-light -y
+sudo systemctl enable --now nginx
+</file>
+
+===== 2. Global NGINX Configuration (nginx.conf) =====
+To harden the server against basic denial-of-service attempts and hide its architectural identity, modify the primary configuration file.
+
+<code>sudo nano /etc/nginx/nginx.conf</code>
+
+<file bash /etc/nginx/nginx.conf>
+http {
+    # ... default settings ...
+    
+    # Hide NGINX version number from HTTP response headers
+    server_tokens off;
+
+    # Buffer Tunings (Prevents 502 Bad Gateway errors on large headers)
+    proxy_buffer_size   128k;
+    proxy_buffers   4 256k;
+    proxy_busy_buffers_size   256k;
+    
+    # Client timeout thresholds
+    client_body_timeout 12s;
+    client_header_timeout 12s;
+</file>
+
+===== 3. The TLS/SSL Cipher Profile =====
+Security scanning tools (like Qualys SSL Labs) will heavily penalize a web server that accepts obsolete encryption. Create a dedicated TLS parameter file to enforce strict modern cryptography.
+
+<code>sudo nano /etc/nginx/snippets/ssl-params.conf</code>
+
+<file bash /etc/nginx/snippets/ssl-params.conf>
+# Enforce TLS 1.2 and TLS 1.3 Only (Drop SSLv3, TLS 1.0, 1.1)
+ssl_protocols TLSv1.2 TLSv1.3;
+ssl_prefer_server_ciphers on;
+ssl_ciphers "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384";
+
+# Implement Strict Transport Security (HSTS)
+add_header Strict-Transport-Security "max-age=63072000" always;
+</file>
+
+===== 4. Application Server Blocks (Virtual Hosts) =====
+Create the specific routing file that accepts public web requests and pushes them to the internal Overseerr dashboard. 
+
+<code>sudo nano /etc/nginx/sites-available/request.yourdomain.com</code>
+
+<file bash /etc/nginx/sites-available/request.yourdomain.com>
+server {
+    listen 80;
+    server_name request.yourdomain.com;
+    
+    # Route to internal Overseerr Request Server
+    location / {
+        proxy_pass http://10.0.20.15:5055;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+</file>
+
+Activate the site block and reload the daemon:
+<code>
+sudo ln -s /etc/nginx/sites-available/request.yourdomain.com /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+</code>
+
+**Next Step:** The above configuration currently runs on unencrypted Port 80. You must instantly secure it using [[security:certbot_automation|Certbot TLS Lifecycle Orchestration]].

@@ -1,0 +1,37 @@
+====== Network Design & Subnet Architecture Blueprint ======
+
+Because a practical media ecosystem relies heavily on public torrent swarms, stringent network segmentation is non-negotiable. This phase isolates untrusted traffic into strict, hardware-enforced security zones, ensuring your core management network and data layers remain completely bulletproof.
+
+===== The Five-Zone VLAN Architecture =====
+The architecture decomposes a traditionally flat network into five distinct Virtual Local Area Networks (VLANs).
+
+^ Zone Name ^ VLAN ID ^ Subnet Baseline ^ Primary Traffic Profiles ^ Internet Routing ^
+| **Trusted Management** | 10 | ''192.168.10.0/24'' | Management, Arr Stack, Veeam CE | Outbound Permitted |
+| **Hardened DMZ** | 20 | ''10.0.20.0/24'' | Plex, Unmanic, NGINX, Overseerr | Inbound & Outbound Permitted |
+| **IoT / Smart Devices** | 30 | ''10.0.30.0/24'' | Smart TVs, Media Sticks, Appliances | Outbound Permitted |
+| **Guest Network** | 40 | ''10.0.40.0/24'' | Untrusted Client Hardware | Outbound Permitted |
+| **Isolated Storage Fabric** | 50 | ''10.0.50.0/24'' | Raw NFS Storage I/O Only | **Completely Non-Routable** |
+
+===== The Conceptual Inter-VLAN Traffic Matrix =====
+The core gateway enforces a **Default Deny** posture for all inter-VLAN communication: every packet traveling across broadcast boundaries is blocked by default unless it matches an explicit permit rule.
+
+^ Source Zone ^ Destination Zone ^ Protocol / Port ^ Allowed Action & Technical Purpose ^
+| **VLAN 10** | ANY Zone & Internet | ANY | **PERMIT:** Full management capability, outbound application updates, and media consumption access. |
+| **VLAN 20** | Public Internet | ANY | **PERMIT:** Facilitates outbound application updates, reverse proxy ingress routing, and remote Plex streaming delivery. |
+| **VLAN 20** | VLAN 10 | TCP 7878, 8989, 8686 | **PINHOLE ONLY:** Strictly limited to Overseerr communicating with the ARR suite. |
+| **VLAN 20** | VLAN 10 | ALL Other Traffic | **DENY (Hard Stop):** Ensures that if an internet-facing app is compromised, the attacker cannot pivot laterally. |
+| **VLAN 30** | Public Internet | ANY | **PERMIT:** Standard telemetry and streaming functionality for media sticks. |
+| **VLAN 30** | VLAN 20 | TCP 32400 | **PERMIT:** Strictly limited to local media streaming clients hitting the Plex Media Server. |
+| **VLAN 40** | Public Internet | Web Standard | **PERMIT:** Basic web browsing and DNS resolution only. |
+| **VLAN 50** | ANY Zone & Internet | ANY | **DENY (Non-Routable):** No data can leave this dedicated layer via standard routing. Compute layers must access it via dedicated physical interfaces. |
+
+===== Crucial Architectural Cross-Boundary Rules =====
+While the table above establishes the standard Layer 3 boundaries, the architecture requires two specific operational data paths that bypass or pinhole these restrictions safely. (See [[network:firewall_acls|Firewall ACLs]] for implementation).
+
+==== 1. The Overseerr Stateful Request Pinhole ====
+To facilitate request automation, a highly restricted rule must be created allowing [[services:media_requests|Overseerr]] (VLAN 20) to talk to the ARR servers (VLAN 10) exclusively on their explicit application ports: 8989 (Sonarr), 7878 (Radarr), and 8686 (Lidarr). Because the gateway tracks connections statefully, the ARR server can reply back across the boundary, but VLAN 20 cannot execute any unsolicited scans into VLAN 10.
+
+==== 2. The Veeam CE Backup Transit Pipeline ====
+The [[operations:veeam_dr|Veeam Backup Server]] resides securely on VLAN 10. Because it must manage configurations across both VLAN 10 and VLAN 20, backup traffic will transit across these boundaries on specified backup management ports, protected by application-aware credentials.
+
+**Next Step:** Define the physical hardware that will run this topology in the [[architecture:hardware_matrix|Hardware Allocation Matrix]].

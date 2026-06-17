@@ -1,0 +1,44 @@
+====== Unmanic Optimization Engine ======
+
+Unmanic runs alongside Plex on **Physical Host 2 (The Brawn)**. It operates as a background worker, automatically scanning your NFS library and utilizing the NVIDIA GPU to transcode bloated legacy files (H.264, MPEG2) into high-efficiency H.265 (HEVC). This drastically reduces storage footprint and normalizes the media format for direct-play delivery.
+
+===== 1. Container Deployment with GPU Passthrough =====
+Because Unmanic requires complex dependency chains, it is deployed via Docker. However, the container must be executed with the `--gpus all` flag to permit the dockerized application to interface with the bare-metal NVIDIA drivers.
+
+<file bash>
+# Install Docker and the NVIDIA Container Toolkit
+sudo apt install docker.io -y
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+# ... (Deploy nvidia-docker2 package) ...
+
+# Launch Unmanic
+sudo docker run -d \
+  --name unmanic \
+  --restart unless-stopped \
+  --gpus all \
+  -p 8888:8888 \
+  -e PUID=1000 \
+  -e PGID=1000 \
+  -v /opt/unmanic/config:/config \
+  -v /mnt/data/media:/library \
+  -v /mnt/plex_cache:/tmp/unmanic \
+  josh5/unmanic:latest
+</file>
+
+//Note: Unmanic leverages the same `/mnt/plex_cache` drive as Plex to isolate its heavy write cycles.//
+
+===== 2. Plugin Rulesets & Library Configuration =====
+Access the Unmanic dashboard at `http://<BRAWN_IP>:8888`.
+
+Navigate to **Plugins** and install the following pipeline rules:
+  1. **Video Codec Optimizer (NVENC HEVC):** Configures the GPU to process video tracks exclusively into H.265.
+  2. **Audio Format Normalization (AAC):** Ensures high-compatibility fallback audio exists for web clients.
+  3. **Remove Subtitles / Unwanted Tracks:** Strips bloated foreign language tracks to save additional space.
+
+Navigate to **Libraries**:
+  - Add your mapped `/library` path.
+  - Enable the internal scheduled scanner.
+
+**Caution:** Unmanic performs destructive operations (it deletes the original file after replacing it with the optimized version). Ensure your plugin workflow is tested on a small sample directory before pointing it at your entire `/mnt/data/media/` NFS share.
+
+**Next Step:** Secure these web interfaces behind the [[security:nginx_edge|NGINX Edge Proxy]].

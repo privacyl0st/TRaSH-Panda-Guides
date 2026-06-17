@@ -1,0 +1,55 @@
+====== Firewall Access Control Lists & WAN Ingress ======
+
+The following logical firewall rules must be executed sequentially on your core gateway. To match the Default Deny security posture, an implicit "Drop All" rule must exist at the very bottom of your routing engine's stack.
+
+**Important Multi-Homing Note:** Because VLAN 50 does not possess a Switched Virtual Interface (SVI) or an IP address on the firewall router, its isolation is physical and non-routable. The firewall ACLs below manage boundaries exclusively for the routable networks (VLANs 10, 20, 30, and 40).
+
+===== Inbound Stateful Firewall Rulesets =====
+
+==== 1. VLAN 10 (Trusted Management & Acquisition) ====
+Since VLAN 10 is the high-trust administrative zone, it requires unrestricted outbound access.
+  * **Rule 101: PERMIT** | Source: VLAN10_Subnet (192.168.10.0/24) | Destination: ANY | Protocol: ANY
+  * //Action: Allows the ARR stack to pull metadata, communicate with download targets, fetch system updates, and permits administrators to manage the DMZ.//
+
+==== 2. VLAN 20 (Hardened DMZ) ====
+This ruleset restricts public-facing systems from initiating lateral internal compromises while preserving core automation paths.
+  * **Rule 201: PERMIT** | Source: ANY | Destination: NGINX_WAN_IP | Protocol: TCP | Ports: 80, 443 
+  * //Action: External Reverse Proxy Web Ingress.//
+  * **Rule 202: PERMIT** | Source: ANY | Destination: Plex_WAN_IP | Protocol: TCP | Port: 32400 
+  * //Action: Remote Plex Delivery Engine.//
+  * **Rule 203: PERMIT (Stateful)** | Source: Overseerr_IP (10.0.20.X) | Destination: ARR_Server_IP (192.168.10.X) | Protocol: TCP | Ports: 7878, 8989, 8686
+  * //Action: Automated Request Pinhole.//
+  * **Rule 204: PERMIT** | Source: VLAN20_Subnet (10.0.20.0/24) | Destination: WAN (Internet) | Protocol: ANY 
+  * //Action: Allows DMZ apps to pull metadata and software updates.//
+  * **Rule 205: DROP** | Source: VLAN20_Subnet (10.0.20.0/24) | Destination: VLAN10_Subnet, VLAN30_Subnet, VLAN40_Subnet
+  * //Action: Absolute containment boundary.//
+
+==== 3. VLAN 30 (Internet of Things) ====
+Limits smart home and streaming ecosystems strictly to public content delivery networks and local streaming boundaries.
+  * **Rule 301: PERMIT** | Source: VLAN30_Subnet (10.0.30.0/24) | Destination: Plex_Server_IP (10.0.20.X) | Protocol: TCP | Port: 32400
+  * **Rule 302: PERMIT** | Source: VLAN30_Subnet (10.0.30.0/24) | Destination: WAN (Internet) | Protocol: ANY
+  * **Rule 303: DROP** | Source: VLAN30_Subnet (10.0.30.0/24) | Destination: ANY Internal Subnets
+
+==== 4. VLAN 40 (Isolated Guest Network) ====
+  * **Rule 401: PERMIT** | Source: VLAN40_Subnet (10.0.40.0/24) | Destination: WAN (Internet) | Protocol: Web Standard (HTTP/HTTPS, DNS)
+  * **Rule 402: DROP** | Source: VLAN40_Subnet (10.0.40.0/24) | Destination: ANY Internal Subnets
+
+===== WAN Edge Inbound Rules (Port Forwarding) =====
+Because this architecture funnels all external client requests through a centralized [[security:nginx_edge|NGINX reverse proxy]], your perimeter gateway's external WAN interface must enforce a strict default-deny posture. 
+
+In your router's Port Forwarding / NAT Virtual Server configuration interface, implement the following mappings:
+
+^ Rule Identifier ^ Protocol ^ External WAN Port ^ Destination Host (VLAN 20 DMZ) ^ Internal Destination Port ^ Operational Purpose ^
+| **Rule P-01 (HTTPS)** | TCP | 443 | NGINX_Proxy_IP (10.0.20.X) | 443 | Secure External Ingress / SSL-TLS Terminated Traffic |
+| **Rule P-02 (HTTP)** | TCP | 80 | NGINX_Proxy_IP (10.0.20.X) | 80 | HTTP-to-HTTPS Redirection & Automated Let's Encrypt TLS Challenges |
+| **Default Inbound** | ANY | ANY | ANY | ANY | **DROP / SILENTLY IGNORE (Stealth Mode)** |
+
+===== Architectural Security Considerations =====
+
+==== 1. Enforcement of Stealth Mode ====
+Ensure that the default action for unmapped ports is explicitly configured to **Drop** rather than Reject. A "Reject" action forces your gateway to respond with an ICMP Port Unreachable packet, confirming to malicious automated scanners that a valid routing asset exists. A "Drop" action silently discards the packets, ensuring your perimeter remains invisible (Stealth Mode).
+
+==== 2. Let's Encrypt HTTP-01 vs. DNS-01 Challenges ====
+While Rule P-02 (Port 80) is structurally required if you utilize Certbot's standard HTTP-01 challenge, it does expose a plain-text listening port.
+
+**Architectural Recommendation:** If your DNS provider supports API integration (e.g., Cloudflare, Route 53), pivot to a DNS-01 TXT record challenge inside your [[security:certbot_automation|Certbot Configuration]]. This allows Certbot to validate domain ownership out-of-band, allowing you to completely delete Rule P-02 and close Port 80 permanently.

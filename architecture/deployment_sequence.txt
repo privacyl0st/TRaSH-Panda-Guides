@@ -1,0 +1,44 @@
+====== Ecosystem Deployment Sequence ======
+
+Because this ecosystem is highly decoupled and relies on strict stateful pinholes, components must be deployed in a specific order. Attempting to build the application layer before the storage or network layer is complete will result in database corruption and routing failures.
+
+Follow this sequence strictly for a successful bare-metal-to-production build.
+
+===== Phase 1: Planning & Topologies =====
+  - Review the [[architecture:network_topology|Network Topology & Traffic Matrix]]
+  - Verify your hardware matches the [[architecture:hardware_matrix|Hardware Allocation Matrix]]
+  - Reference the [[reference:ip_port_matrix|IP, Port & VLAN Master Matrix]] for your address planning.
+
+===== Phase 2: Network Backbone =====
+  - Deploy switchport mappings and loop prevention in [[network:omada_sdn|Omada SDN Configuration]]
+  - Write your authoritative stateful rulesets in [[network:firewall_acls|Firewall ACLs & Port Forwarding]]
+
+===== Phase 3: Hardware & Storage Provisioning =====
+  - Build the RAID array and Btrfs volumes in [[storage:nas_array|NAS Array Initialization]]
+  - Configure the Out-of-Band SAN and NFS exports in [[storage:nfs_fabric|Isolated NFS Storage Fabric]]
+  - Harden the primary virtualization host in [[compute:hypervisor_host|Hypervisor Host Deployment]]
+  - Deploy the bare-metal processing host in [[compute:media_engine|Media Engine Provisioning]]
+  - Flash and provision the perimeter hardware in [[compute:edge_proxy_node|Edge Proxy Node Setup]]
+  - Apply global optimization parameters via [[compute:linux_baselines|Universal Linux Baselines]]
+
+===== Phase 4: Core Automation & Services =====
+  - Establish the secure internet tunnel in [[services:vpn_tunnel|NordVPN CLI Engine]]
+  - Deploy the headless ingestion client in [[services:download_engine|qBittorrent-nox]]
+  - Deploy the indexer proxy in [[services:indexer_proxy|Prowlarr]]
+  - Deploy the ARR acquisition stack:
+    * [[services:sonarr|Sonarr (TV)]]
+    * [[services:radarr|Radarr (Movies)]]
+    * [[services:lidarr|Lidarr (Music)]]
+  - Deploy automated queue maintenance in [[services:maintenance_engines|Cleanuparr & ByParr]]
+
+===== Phase 5: Processing & Delivery =====
+  - Deploy the user dashboard in [[services:media_requests|Overseerr Request Server]]
+  - Deploy the primary streaming engine in [[services:plex_engine|Plex Media Server]]
+  - Deploy the hardware post-processor in [[services:unmanic|Unmanic Optimization Engine]]
+
+===== Phase 6: Perimeter Security & Day-2 Operations =====
+  - Secure public ingress via the [[security:nginx_edge|NGINX Edge Reverse Proxy]]
+  - Automate TLS certificates via [[security:certbot_automation|Certbot ACME Configuration]]
+  - Configure centralized auditing in [[operations:logging_telemetry|LogCenter Syslog Telemetry]]
+  - Setup immutable snapshots in [[operations:veeam_dr|Veeam Disaster Recovery]]
+  - Validate the ecosystem using the [[reference:testing_framework|Testing & Verification Framework]]

@@ -1,0 +1,44 @@
+====== Emergency Power States & Cold Boot Sequence ======
+
+In a highly interdependent architecture, powering on hosts in the incorrect order will result in cascading failures. Specifically, if the ARR stack boots before the NFS storage fabric is accessible, databases can corrupt, and download paths will fail over to the local OS drive, filling it instantly.
+
+Use the following sequences for planned maintenance windows or recovering from a total facility power loss.
+
+===== The Graceful Spindown (Shutdown Sequence) =====
+Execute shutdowns in this exact order to flush databases to disk cleanly and prevent stale NFS locks.
+
+  - **Step 1: The Gateway (VLAN 20)**
+    * SSH into Physical Host 4 (Edge Proxy).
+    * Execute `sudo shutdown now`. *(Stops incoming external requests).*
+  - **Step 2: The Applications (VLAN 10 & 20)**
+    * Access the Hypervisor Host and gracefully shut down **VM-A** (Acquisition) and **VM-B** (Requests).
+    * Access **Physical Host 2** (Media Engine) and execute `sudo shutdown now`.
+  - **Step 3: The Control Plane (VLAN 10)**
+    * Gracefully shut down **VM-C** (Veeam).
+    * Shut down the physical **Windows 11 Hypervisor Host**.
+  - **Step 4: The Vault (VLAN 10/50)**
+    * Log into the Synology NAS WebUI.
+    * Perform a graceful shutdown. *(This flushes all RAID parity calculations to disk).*
+  - **Step 5: The Backbone**
+    * Power off the Omada Core Switch and Edge Gateway Router.
+
+===== The Cold Boot (Startup Sequence) =====
+Powering the system back on requires strict delays to allow network interfaces and storage arrays to initialize before applications attempt to bind to them.
+
+  - **Step 1: Network Initialization**
+    * Power on the Gateway Router and Core Switch. 
+    * **Wait 3 Minutes** to allow RSTP convergence and DHCP leases to initialize.
+  - **Step 2: Storage Fabric Mount**
+    * Power on the **Synology NAS Array**.
+    * **Wait 5 Minutes.** Do not proceed until you hear the NAS initialization beep, confirming the Btrfs volumes and NFS services are fully active.
+  - **Step 3: Bare-Metal Compute & Hypervisor**
+    * Power on **Physical Host 2** (Media Engine).
+    * Power on the **Windows 11 Hypervisor Host**.
+  - **Step 4: Virtual Machine Sequencing**
+    * Start **VM-C** (Veeam CE) to establish backup hooks.
+    * Start **VM-A** (Acquisition Server). SSH in and verify the `nordlynx` interface is active and `/mnt/data` is mounted successfully.
+    * Start **VM-B** (Request Server).
+  - **Step 5: Edge Perimeter**
+    * Power on **Physical Host 4** (Edge Proxy) to resume accepting external NGINX requests.
+
+**Verification:** Open the Overseerr dashboard. If recent requests load, the entire API chain across VLAN 20 and VLAN 10 is functioning correctly.

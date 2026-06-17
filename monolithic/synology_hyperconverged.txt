@@ -1,0 +1,79 @@
+====== The Synology Hyperconverged Build (Monolithic Fallback) ======
+
+<note warning>
+**ARCHITECTURAL DISCLAIMER**
+This configuration directly contradicts the elite, multi-homed, hardware-isolated philosophy established in the primary guide. Grouping public-facing ingestion tools on the exact same physical OS as your master storage array creates a massive single point of failure.
+
+However, per the original blueprint's preface, this section is provided as a pragmatic alternative to meet realistic hardware and budget constraints.
+</note>
+
+===== 1. The Monolithic Concept =====
+In this deployment, **Physical Host 1**, **Host 2**, and **Host 3** are collapsed into a single, high-end commercial NAS (e.g., Synology DS920+ or DS1522+ with upgraded RAM).
+
+Rather than relying on strict VLAN routing and physical firewalls, isolation is entirely software-defined using Docker (Container Manager) custom networks.
+
+===== 2. Software-Defined Network Isolation (MacVLAN) =====
+To prevent port conflicts and allow the ARR stack containers to possess their own distinct IP addresses on your primary LAN, you must generate a MacVLAN network via SSH.
+
+<file bash>
+# Create a software network bridged to the physical Synology NIC (eth0)
+sudo docker network create -d macvlan \
+  --subnet=192.168.10.0/24 \
+  --gateway=192.168.10.1 \
+  --ip-range=192.168.10.240/28 \
+  -o parent=eth0 \
+  arr_macvlan
+</file>
+
+===== 3. The Gluetun VPN Sandbox =====
+Because you cannot route the entire NAS operating system through a VPN without losing remote access to your files, you must use a specialized Docker container called **Gluetun**.
+
+Gluetun establishes the VPN tunnel. You then force your qBittorrent and Prowlarr containers to route their traffic *through* the Gluetun container's network namespace. If Gluetun loses the VPN connection, the dependent containers instantly lose internet access (a software-defined kill-switch).
+
+==== Docker-Compose Execution Stack ====
+Create a unified `docker-compose.yml` file to orchestrate the VPN sandbox.
+
+<code>sudo nano /volume1/docker/vpn_stack/docker-compose.yml</code>
+
+<file yaml /volume1/docker/vpn_stack/docker-compose.yml>
+version: "3"
+services:
+  gluetun:
+    image: qmcgaw/gluetun
+    container_name: gluetun
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - VPN_SERVICE_PROVIDER=nordvpn
+      - VPN_TYPE=wireguard
+      - WIREGUARD_PRIVATE_KEY=<YOUR_NORDLYNX_PRIVATE_KEY>
+    ports:
+      - 8023:8023 # qBittorrent WebUI Port mapped to host
+      - 9696:9696 # Prowlarr WebUI Port mapped to host
+    restart: always
+
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    network_mode: "service:gluetun" # CRITICAL: Forces routing through VPN
+    environment:
+      - PUID=1024 # Matches your Synology admin UID
+      - PGID=100
+      - WEBUI_PORT=8023
+    volumes:
+      - /volume1/docker/qbittorrent:/config
+      - /volume1/data:/mnt/data
+    depends_on:
+      - gluetun
+    restart: always
+</file>
+
+===== 4. Storage & Hardlink Execution =====
+Because all services are running natively on the NAS, you do not need NFS. All Docker volumes can bind directly to the physical `/volume1/data` root.
+
+**Atomic Hardlinks:** You still must configure Sonarr and Radarr to use hardlinks. In this monolithic setup, it is actually faster, as the disk controller simply rewrites the inode metadata without ever pushing the data across a network interface.
+
+===== 5. Hardware Transcoding Constraints =====
+If your Synology NAS features an Intel Celeron processor (e.g., J4125), Plex can utilize Intel Quick Sync Video (QSV) for hardware transcoding instead of the NVIDIA NVENC pipeline.
+  * You must install Plex natively via the Synology Package Center, OR pass the `/dev/dri` hardware device into your Plex Docker container.
+  * Do NOT deploy Unmanic in a monolithic build, as NAS Celeron processors lack the sustained compute power necessary for bulk H.265 conversions.

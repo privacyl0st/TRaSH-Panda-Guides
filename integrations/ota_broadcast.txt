@@ -1,0 +1,33 @@
+====== OTA Broadcast & HDHomeRun Integration ======
+
+To integrate live, uncompressed local broadcast television (sports, local news) directly into the Plex Media Server interface, this expansion utilizes a SiliconDust HDHomeRun networked tuner and a physical Yagi antenna.
+
+===== 1. Antenna Deployment (The Yagi) =====
+Unlike compressed cable signals, Over-The-Air (OTA) ATSC broadcasts require line-of-sight hardware tuning.
+
+  - Mount a directional Yagi antenna in your attic or on your roof, pointed precisely toward your local broadcast towers (utilize tools like FCC DTV Reception Maps to determine exact azimuth degrees).
+  - Terminate the coaxial cable run directly into the input of the HDHomeRun tuner box.
+
+===== 2. Network Ingestion (VLAN 20) =====
+The HDHomeRun acts as a raw network streaming device. Because the Plex Media Server resides in the DMZ (VLAN 20), the tuner must also be placed in this zone to prevent raw UDP multicast streams from flooding across your core firewall.
+
+  - Wire the HDHomeRun's ethernet interface directly to an access port configured for **VLAN 20 (DMZ Profile)** on your Omada switch.
+  - Assign the HDHomeRun a static DHCP lease (e.g., `10.0.20.100`).
+
+===== 3. Plex DVR Integration =====
+Once the tuner is broadcasting on the local DMZ, Plex will seamlessly ingest the feed.
+
+  1. Log into your Plex WebUI.
+  2. Navigate to **Settings → Live TV & DVR**.
+  3. Click **Set Up Plex DVR**.
+  4. Plex should automatically discover the HDHomeRun at `10.0.20.100`.
+  5. Enter your local postal code to pull the electronic program guide (EPG) metadata.
+  6. **Perform Channel Scan:** Map the discovered frequencies to the EPG network names.
+
+===== 4. Transcoding & Storage Considerations =====
+Raw OTA MPEG-2 streams are massive (often 15-20 Mbps). 
+
+**Live Viewing:** When a client streams live TV, Physical Host 2 (The Brawn) will utilize its NVIDIA GPU to transcode the MPEG-2 broadcast down to a bandwidth-friendly H.264 stream on the fly.
+
+**DVR Recording:** If you configure Plex to record live television, point the destination library directly to `/mnt/data/media/tv/`. Be aware that 1 hour of uncompressed OTA recording can consume 6-8GB of disk space. 
+//Optional:// You can configure the [[services:unmanic|Unmanic Engine]] to scan this directory and automatically compress recorded broadcasts overnight.

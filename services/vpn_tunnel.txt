@@ -1,0 +1,53 @@
+====== Secure VPN Tunnel & Kill-Switch Routing ======
+
+Because public torrent swarms expose your public IP address to all peers, the Acquisition Server must push all outbound torrent traffic through an encrypted tunnel. This deployment leverages the native NordVPN CLI engine and its proprietary WireGuard implementation (NordLynx) for maximum throughput with minimal CPU overhead.
+
+===== 1. Daemon Installation & Authentication =====
+Access your Acquisition Server (VM-A) terminal and deploy the official repository package:
+
+<code>
+sh <(curl -sSf https://downloads.nordcdn.com/apps/linux/install.sh)
+</code>
+
+Authenticate your daemon. Because this is a headless server, you must generate a static token from your NordVPN account dashboard instead of using a web callback.
+
+<code>
+nordvpn login --token <YOUR_GENERATED_TOKEN>
+</code>
+
+===== 2. Tunnel Technology & Optimization =====
+Enforce the NordLynx (WireGuard) technology. Legacy OpenVPN protocols introduce unnecessary latency and cryptographic overhead that will bottleneck high-speed fiber connections.
+
+<code>
+nordvpn set technology nordlynx
+</code>
+
+===== 3. Management Plane Whitelisting =====
+**CRITICAL:** Before activating the kill-switch or connecting the tunnel, you must explicitly whitelist your internal subnets. Failure to do so will instantly sever your SSH connection when the VPN routing table takes over the host's network stack.
+
+<file bash>
+# Whitelist the Trusted Management network (VLAN 10)
+nordvpn whitelist add subnet 192.168.10.0/24
+
+# Whitelist the Hardened DMZ network (VLAN 20)
+nordvpn whitelist add subnet 10.0.20.0/24
+</file>
+
+===== 4. Kill-Switch Activation & Connection =====
+Activate the system-wide kill-switch. This modifies the host's `iptables` to strictly drop any outbound traffic attempting to use the default gateway if the VPN daemon crashes or loses its handshake with the remote server.
+
+<code>
+nordvpn set killswitch on
+nordvpn connect
+</code>
+
+===== 5. Verification =====
+Validate your tunnel state and ensure the new `nordlynx` interface has been provisioned by the kernel.
+
+<code>
+nordvpn status
+ip a show nordlynx
+</code>
+//Note the assigned IP address on the `nordlynx` interface. You will need to explicitly bind qBittorrent to this interface in the next step.//
+
+**Next Step:** Deploy the torrent daemon and bind it to this tunnel in [[services:download_engine|Headless Download Engine]].

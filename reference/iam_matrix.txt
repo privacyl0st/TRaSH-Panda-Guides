@@ -1,0 +1,36 @@
+====== IAM & Permissions Matrix ======
+
+Because this ecosystem relies on a distributed NFS fabric (VLAN 50), mismatched User IDs (UIDs) or Group IDs (GIDs) between the compute nodes and the Synology NAS will result in catastrophic "Access Denied" or "Stale File Handle" errors. 
+
+Use this matrix to ensure absolute consistency across all Linux hosts and Docker containers.
+
+===== Global Media Group =====
+To allow multiple distinct applications (Plex, qBittorrent, Sonarr) to read and modify the same files without executing as the dangerous `root` user, all media applications must share a common primary group.
+
+  * **Global Group Name:** `media`
+  * **Global Group ID (GID):** `1000` *(Must be identical on the NAS, VM-A, and Physical Host 2).*
+
+===== Application Execution Contexts =====
+^ Application / Service ^ Host Environment ^ Execution User ^ User ID (UID) ^ Primary Group ^ Standard Umask ^
+| **Synology NFS Root** | NAS (VLAN 50) | `admin` | `1024` | `administrators` | N/A |
+| **qBittorrent-nox** | VM-A (VLAN 10) | `qbituser` | `1001` | `media` (GID 1000) | `002` |
+| **ARR Stack (Native)** | VM-A (VLAN 10) | `arruser` | `1002` | `media` (GID 1000) | `002` |
+| **ByParr (Docker)** | VM-A (VLAN 10) | Mapped via ENV | `1002` (PUID) | `1000` (PGID) | `022` |
+| **Plex Media Server** | Host 2 (VLAN 20) | `plex` | `1003` | `media` (GID 1000) | `022` |
+| **Unmanic (Docker)** | Host 2 (VLAN 20) | Mapped via ENV | `1003` (PUID) | `1000` (PGID) | `022` |
+
+===== NFS Directory Baseline Permissions =====
+The root storage folder on the NAS (`/volume1/data`) must enforce strict POSIX permissions to support the above users. Execute the following from the NAS terminal if permissions become fragmented:
+
+<file bash>
+# Set directory ownership to the admin user and media group
+sudo chown -R 1024:1000 /volume1/data
+
+# Force directories to 775 (User: RWX, Group: RWX, Others: R-X)
+sudo find /volume1/data -type d -exec chmod 775 {} \;
+
+# Force files to 664 (User: RW, Group: RW, Others: R)
+sudo find /volume1/data -type f -exec chmod 664 {} \;
+</file>
+
+//Architectural Guardrail: The `002` Umask utilized by qBittorrent and the ARR stack ensures that any new file downloaded or moved automatically inherits the `664` permission structure, allowing Plex to read it immediately.//

@@ -1,0 +1,47 @@
+====== Certbot TLS Lifecycle Orchestration ======
+
+Certbot automates the generation and renewal of Let's Encrypt SSL/TLS certificates. By integrating it with your NGINX proxy, your public-facing traffic becomes fully encrypted, and your web browser will display the trusted padlock icon.
+
+===== 1. Installation =====
+Install the Certbot client and its native NGINX plugin on the Edge Proxy (VM-D / Raspberry Pi).
+
+<file bash>
+sudo apt update && sudo apt install certbot python3-certbot-nginx -y
+</file>
+
+===== 2. Certificate Generation (HTTP-01 Challenge) =====
+The standard generation process temporarily spins up a validation file on port 80 to prove you own the domain.
+
+//Prerequisite: Ensure your public DNS A-Record for `request.yourdomain.com` points to your home's public WAN IP, and Port 80 is forwarded to `10.0.20.5` in your [[network:firewall_acls]].//
+
+Execute the automated NGINX integration:
+<code>sudo certbot --nginx -d request.yourdomain.com</code>
+
+During the interactive prompt:
+  * Provide a valid administrative email for expiration notices.
+  * Agree to the Terms of Service.
+  * **CRITICAL:** When asked if you want to redirect HTTP traffic to HTTPS, select **Option 2 (Redirect)**. This prevents any credentials from being transmitted in plain text.
+
+===== 3. NGINX SSL Configuration Validation =====
+Certbot automatically modifies your NGINX server block to listen on Port 443 and applies the certificates. To ensure your custom high-security ciphers are active, open the site block again:
+
+<code>sudo nano /etc/nginx/sites-available/request.yourdomain.com</code>
+
+Verify that Certbot injected the SSL paths, and manually append your custom snippet directly beneath them:
+<file bash>
+    ssl_certificate /etc/letsencrypt/live/request.yourdomain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/request.yourdomain.com/privkey.pem;
+    include /etc/nginx/snippets/ssl-params.conf; # ADD THIS LINE
+</file>
+
+Reload NGINX: `sudo systemctl reload nginx`
+
+===== 4. Automated Renewal Timer =====
+Let's Encrypt certificates expire every 90 days. Certbot establishes a `systemd` timer automatically, but you should verify it is active and tracking.
+
+<code>sudo systemctl status certbot.timer</code>
+
+To perform a dry-run to ensure the renewal process works without hitting API rate limits:
+<code>sudo certbot renew --dry-run</code>
+
+**Next Step:** With the perimeter secured, begin Day-2 operations mapping starting with [[operations:logging_telemetry|Centralized Syslog Telemetry]].

@@ -1,0 +1,35 @@
+====== Automated Maintenance & Watchdogs ======
+
+To truly achieve a zero-touch architecture, the ecosystem must be capable of self-healing from minor software hangs, VPN disconnections, or out-of-memory container crashes without requiring manual administrator intervention.
+
+===== 1. The VPN Watchdog Loop (VM-A) =====
+While `systemd` handles daemon crashes, it cannot detect if the VPN daemon is running but the actual network tunnel is stalled (a silent drop). We deploy a bash loop to validate tunnel integrity by pinging an external DNS server through the `nordlynx` interface. If it fails, the script forcefully restarts the VPN and the download engines.
+
+==== Deployment ====
+  1. Create the script file: `sudo nano /usr/local/bin/vpn_watchdog.sh`
+  2. Paste the script block from [[reference:scripts#vpn-watchdog|Scripts: VPN Watchdog]].
+  3. Make the script executable: `sudo chmod +x /usr/local/bin/vpn_watchdog.sh`
+
+==== Crontab Scheduling ====
+To run this validation check every 5 minutes, add it to the root crontab:
+<code>sudo crontab -e</code>
+<file bash>
+*/5 * * * * /usr/local/bin/vpn_watchdog.sh >> /var/log/vpn_watchdog.log 2>&1
+</file>
+
+===== 2. Edge Proxy Configuration Backup (VM-D) =====
+Because the Raspberry Pi Edge Proxy relies on SD cards or USB flash memory—which have higher failure rates than enterprise SSDs—you must automatically back up its NGINX configurations and Let's Encrypt certificates to the core NAS.
+
+==== Deployment via Rsync ====
+This script packages the critical `/etc/nginx` and `/etc/letsencrypt` directories and securely pushes them over SSH/Rsync to the Acquisition server (which is then backed up by Veeam).
+
+  1. Create the script file: `sudo nano /usr/local/bin/edge_backup.sh`
+  2. Paste the script block from [[reference:scripts#edge-proxy-backup|Scripts: Edge Proxy Backup]].
+  3. Make the script executable: `sudo chmod +x /usr/local/bin/edge_backup.sh`
+  4. Schedule via crontab to run weekly on Sunday at 1:00 AM:
+
+<file bash>
+0 1 * * 0 /usr/local/bin/edge_backup.sh >> /var/log/edge_backup.log 2>&1
+</file>
+
+**Next Step:** Learn how to isolate faults and verify infrastructure health in [[operations:troubleshooting|Troubleshooting & Health Checks]].

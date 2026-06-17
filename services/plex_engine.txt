@@ -1,0 +1,38 @@
+====== Plex Media Server (Bare-Metal Engine) ======
+
+The Plex Media Server is the core delivery application. It is installed directly onto **Physical Host 2 (The Brawn)** to ensure it has unfettered, un-virtualized access to the discrete NVIDIA GPU for hardware-accelerated transcoding.
+
+===== 1. Repository Installation =====
+Add the official Plex repository to your bare-metal Ubuntu instance:
+
+<file bash>
+echo deb https://downloads.plex.tv/repo/deb public main | sudo tee /etc/apt/sources.list.d/plexmediaserver.list
+curl https://downloads.plex.tv/plex-keys/PlexSign.key | sudo apt-key add -
+sudo apt update
+sudo apt install plexmediaserver -y
+</file>
+
+===== 2. NFS Permissions Mapping =====
+Ensure the `plex` system user is added to the shared media group, granting it read-access to the `/mnt/data/media/` directory mapped in the [[storage:nfs_fabric]] phase.
+
+<code>
+sudo usermod -aG media plex
+sudo systemctl restart plexmediaserver
+</code>
+
+===== 3. Hardware Transcoder Initialization (NVIDIA NVENC) =====
+Hardware transcoding is the defining feature of "The Brawn." It offloads the massive CPU overhead of converting media formats to the dedicated NVIDIA RTX 3050 GPU.
+
+Navigate to **Settings → Transcoder** in the Plex WebUI:
+  - Check **Use hardware acceleration when available**.
+  - Check **Use hardware-accelerated video encoding**.
+  - **Hardware transcoding device:** Explicitly select your discrete NVIDIA GPU from the dropdown list (do not leave this on Auto, as it may attempt to use inferior Intel QuickSync CPU graphics if present).
+
+===== 4. Transcode Cache Re-Routing =====
+Transcoding generates massive temporary files. If written to the OS drive, it will rapidly destroy the NVMe's read/write endurance limits. 
+
+In the same **Transcoder** menu:
+  - Locate **Transcoder temporary directory**.
+  - Change the path to `/mnt/plex_cache` (The secondary, dedicated NVMe cache drive partitioned during the [[compute:media_engine]] deployment).
+
+**Next Step:** Deploy the automated hardware optimizer in [[services:unmanic|Unmanic Engine]].

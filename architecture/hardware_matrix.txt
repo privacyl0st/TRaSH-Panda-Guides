@@ -1,0 +1,52 @@
+====== Hardware Allocation & Topology ======
+
+Unlike traditional consumer homelabs that attempt to run all services on a single, monolithic machine, this distributed blueprint isolates operations into dedicated bare-metal and virtualized layers. 
+
+This architecture effectively separates the **"Brains"** (Automation), the **"Brawn"** (Transcoding), the **"Vault"** (Storage), and the **"Guard"** (Proxy Security) into distinct physical hardware footprints.
+
+===== Physical Host 1: The Brains (Virtualization Host) =====
+**Role:** The centralized control plane orchestrating the decoupled virtual machines managing the ingestion pipeline and automated workflows.
+
+  * **Hypervisor:** Windows 11 Pro + VMware Workstation 17 Pro
+  * **Compute:** Modern 8-Core / 16-Thread processor minimum.
+  * **Memory:** 64GB DDR4/DDR5 RAM (Critical baseline for VM memory pooling).
+  * **Storage:** 1TB SATA SSD (Host OS) + 4TB SATA SSD (Hypervisor Datastores).
+  * **Networking (3x Physical NICS):**
+    * **NIC 1:** Untagged Access Port to VLAN 10 (Host OS, VM-A, VM-C).
+    * **NIC 2:** Untagged Access Port to VLAN 20 (Hardware bridge for VM-B).
+    * **NIC 3:** Untagged Access Port to VLAN 50 (Dedicated NFS data path).
+
+==== Virtual Machine Payload Configurations ====
+  * **VM-A (Acquisition Server):** Ubuntu 24.04 LTS (2 vCPUs / 8GB RAM). Hosts the core ARR application suite and download clients.
+  * **VM-B (Front-End Boundary):** Ubuntu 24.04 LTS (2 vCPUs / 4GB RAM). Hosts Overseerr and internal documentation.
+  * **VM-C (Infrastructure Protection):** Windows Server 2022 (4 vCPUs / 16GB RAM). Executes Veeam Backup & Replication CE.
+
+===== Physical Host 2: The Brawn (Bare-Metal Media Server) =====
+**Role:** The heavy compute lifter. Isolating media delivery ensures 100% of the CPU and hardware graphics channels are available for high-density streaming without introducing I/O wait times to the download stacks.
+
+  * **Operating System:** Bare-Metal Ubuntu 24.04 LTS (No Virtualization).
+  * **Compute:** Mid-range 6-Core processor baseline.
+  * **Graphics Compute:** Dedicated NVIDIA GeForce RTX 3050 (8GB) or superior. //(Mandatory for hardware-accelerated NVENC pipelines).//
+  * **Storage:** 256GB NVMe (Base OS) + 1TB PCIe NVMe (Dedicated Transcode Cache).
+  * **Networking (2x Physical NICS):**
+    * **NIC 1:** Untagged Access Port to VLAN 20 (Public DMZ Ingress).
+    * **NIC 2:** Untagged Access Port to VLAN 50 (Isolated Storage Fabric).
+
+===== Physical Host 3: The Vault (Storage Appliance) =====
+**Role:** Pure, immutable data storage stripped of applications. Sole operational responsibility is high-throughput file preservation and network delivery over NFS.
+
+  * **Device Chassis:** 4-Bay (or greater) hardware NAS appliance (e.g., Synology DS920+).
+  * **Array Configuration:** 3x (or more) High-Capacity Enterprise SATA HDDs (RAID 5 / SHR).
+  * **Networking (2x Physical NICS):**
+    * **NIC 1:** Untagged Access Port to VLAN 10 (WebUI and Veeam transfers).
+    * **NIC 2:** Untagged Access Port to VLAN 50 (Exclusive NFS data pipe, no Default Gateway).
+
+===== Physical Host 4: The Guard (Edge Gateway) =====
+**Role:** A low-power, single-board computing architecture dedicated to 24/7 uptime to orchestrate incoming reverse-proxy validation and automated certificate management.
+
+  * **Device Platform:** Raspberry Pi 5 (8GB) or equivalent ARM64 SBC.
+  * **Storage:** High-speed application-rated SD card, or PCIe (HAT) NVMe SSD (preferred).
+  * **Networking (1x Physical NIC):**
+    * **NIC 1:** Untagged Access Port to VLAN 20 (Hardened DMZ).
+
+**Next Step:** Begin physical implementation by mapping your switch and gateway in the [[network:omada_sdn|Omada SDN Hardware Implementation Baseline]].

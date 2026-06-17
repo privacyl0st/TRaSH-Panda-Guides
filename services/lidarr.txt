@@ -1,0 +1,30 @@
+====== Lidarr (Audio Acquisition & Management) ======
+
+Lidarr manages the automated acquisition of discographies and musical artist libraries. It operates on the Acquisition Server (VM-A) and listens on **TCP Port 8686**.
+
+===== 1. Initialization & API Generation =====
+Following installation, navigate to **Settings → General** to retrieve your API key for Prowlarr and Overseerr integration.
+
+Navigate to **Settings → Media Management** and enforce the hardlink rules. Point your Root Folder to the designated audio directory on the storage fabric: `/mnt/data/media/music/`.
+
+===== 2. Lossless Metadata & Folder Hierarchy =====
+Unlike TV and Movies, audio libraries rely heavily on embedded ID3 tags rather than just filenames to structure their databases.
+
+Navigate to **Settings → Media Management → Track Naming**:
+  - Enforce the standard structure: `{Artist Name}/{Album Title} ({Release Year})/{track:02} - {Track Title}`
+  - Check the box to **Rename Tracks**. This ensures wildly formatted torrent downloads are sanitized into a clean, uniform library before Plex ingests them.
+
+===== 3. Quality Profiles (The FLAC Standard) =====
+Navigate to **Settings → Profiles**:
+  - Rename the primary profile to **Lossless FLAC**.
+  - Edit the profile to explicitly disable all lossy formats (MP3, AAC) unless a FLAC version is entirely unavailable.
+  - Set the priority order: `FLAC` > `MP3 320kbps`.
+
+===== 4. Download Client Integration =====
+Navigate to **Settings → Download Clients**:
+  - Add qBittorrent.
+  - **Host:** `localhost`
+  - **Port:** `8023`
+  - **Category:** `music-lidarr`
+
+**Next Step:** Deploy the background self-healing scripts in [[services:maintenance_engines|Cleanuparr & ByParr Maintenance Engines]].

@@ -1,0 +1,51 @@
+====== Omada SDN Hardware Implementation Baseline ======
+
+This section translates the vendor-agnostic network blueprints into concrete physical configurations inside the TP-Link Omada SDN Controller environment. This establishes the segmentation, loop prevention, and Layer 2/3 hardware security policies across the network backbone.
+
+//Note: While this deployment leverages TP-Link Omada, the underlying configurations seamlessly translate to any standard managed networking fabric.//
+
+===== Part 1: Global Switching & Loop Prevention =====
+To guarantee structural stability across your interconnected switch backplane and prevent catastrophic broadcast storms, Rapid Spanning Tree Protocol (RSTP) must be globally enforced with explicit bridge priority values.
+
+  - **Primary Core Switch:** Set RSTP Priority to ''4096''. This hardware node serves as the absolute root of your Layer 2 topology.
+  - **Secondary Core / Aggregation Switch:** Set RSTP Priority to ''8192''. This unit automatically assumes the root bridge role if the Primary Core switch suffers a hardware or link failure.
+  - **Downstream Access Switches:** Set RSTP Priority to the default ''32768''.
+
+==== Edge Port-Level Protections ====
+Apply the following port-specific constraints via the SDN Controller to all access links terminated directly by client endpoints:
+
+  - **Loopback Detection:** Enable globally. Configure the process-mode to **Port-Based** and the recovery-mode to **Auto**. This ensures individual access lines automatically isolate loop events without drop-locking the entire physical switch fabric.
+  - **Spanning Tree on Edge Servers:** Set Spanning Tree to **Disabled** exclusively on the interfaces facing your multi-homed hypervisor or physical media engine. This prevents guest VM reboots or virtual network interface teardowns from sending false Topology Change Notifications (TCNs) up the wire, which would otherwise trigger unnecessary MAC table flushing.
+
+===== Part 2: Port Profile Mapping =====
+Configure your physical switch ports to cleanly deliver tagged and untagged traffic to your devices based on your physical layout:
+
+  * **VLAN 20 (DMZ Profile):** Configure with VLAN 20 Untagged and PVID 20. Map this profile directly to the switch ports terminating the PLEX Media Server NIC 1, the Hypervisor Host NIC 2, and the Raspberry Pi 5 Edge Proxy interface.
+  * **VLAN 50 (Isolated NFS Profile):** Configure with VLAN 50 Untagged and PVID 50. Under the profile settings, explicitly choose **No Switchport Allowed VLAN 10** to prevent management-plane packet leakage into your storage backplane. Map this profile to the switch ports terminating NAS NIC 2, Hypervisor Host NIC 3, and PLEX Media Server NIC 2.
+
+==== Hypervisor Physical Interface Binding ====
+Because the multi-homed Virtual Machine Host maps its physical NICs to independent Layer 2 networks within the host OS, you must provision distinct switch access ports rather than trunking to a single adapter interface:
+
+  * **Switch Port 1 (Terminating VM Host NIC 1):** Set profile to Untagged VLAN 10 (PVID 10).
+  * **Switch Port 3 (Terminating VM Host NIC 2):** Set profile to Untagged VLAN 20 (PVID 20).
+  * **Switch Port 6 (Terminating VM Host NIC 3):** Set profile to Untagged VLAN 50 (PVID 50).
+
+===== Part 3: Network Hardware Access Control Lists (ACLs) =====
+To enforce your security boundaries at wirespeed, implement the following Switch and Gateway Access Control Lists (ACLs) within your SDN Controller. These rules compile down directly into the hardware ASIC chips of your Layer 3 managed switches.
+
+^ Rule ID & Purpose ^ Direction ^ Source ^ Destination ^ Protocol ^ Operation ^
+| **1.1 (Permit Logging Link)**<br>Allows DMZ hosts to ship logs. | Switch / Network ACL | Network -> VLAN20 | IP Group -> NAS Host IP (192.168.10.200) | UDP 514 | **PERMIT** |
+| **1.2 (Deny Cross-Network Traffic)**<br>Absolute DMZ containment. | Switch / Network ACL | Network -> VLAN20 | Network -> All other internal networks | ANY | **DENY** |
+| **2.1 (Block Inter-VLAN Storage)**<br>Non-Routable enforcement. | Gateway / Switch ACL | Network -> VLAN50 | IP Group -> 0.0.0.0/0 (All Networks) | ANY | **DENY** |
+| **3.1 (Permit App-to-App Discovery)**<br>API pushes to Request engines. | Switch ACL | IP -> Acquisition Host (192.168.10.15) | IP -> Requests Host (10.0.20.15) | TCP 7878, 8989 | **PERMIT** |
+
+===== Part 4: Inbound Port Forwarding & Hardening =====
+Navigate to Transmission → NAT → Virtual Status → Create New and apply the following exact configurations to shield internal resources:
+
+  - **HTTP Pipeline Mapping:** External Port: ''80'' | Internal IP: ''10.0.20.5'' (RPi 5 Proxy) | Internal Port: ''80'' | Protocol: ''TCP''
+  - **HTTPS Pipeline Mapping:** External Port: ''443'' | Internal IP: ''10.0.20.5'' (RPi 5 Proxy) | Internal Port: ''443'' | Protocol: ''TCP''
+
+==== Management Plane Hardening ====
+Disable local web, SSH, and telnet configuration utilities on individual switch units. Force all administrative traffic to authenticate exclusively through the on-premises SDN Controller over an encrypted HTTPS session on VLAN 10.
+
+**Next Step:** Deploy the logical stateful firewalls bridging these zones in [[network:firewall_acls|Firewall ACLs]].

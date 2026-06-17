@@ -1,0 +1,34 @@
+====== Performance Testing & Verification Framework ======
+
+While the [[operations:troubleshooting]] hub handles broken components, this framework is used during initial deployment (or after major hardware upgrades) to validate that the ecosystem can handle peak concurrent loads without dropping network packets or stalling disk I/O.
+
+===== 1. Storage Fabric Saturation (NFS I/O Testing) =====
+To ensure your Synology NAS Array can handle multiple concurrent 4K transcodes and gigabit torrent downloads simultaneously, you must perform a raw block-write test over the VLAN 50 fabric.
+
+SSH into **Physical Host 2 (Media Engine)** and execute a `dd` disk saturation test targeting the mounted NFS directory:
+
+<code>
+# Write a 10GB contiguous file to the NFS array to test sustained throughput
+sudo dd if=/dev/zero of=/mnt/data/test_saturation.img bs=1G count=10 oflag=direct
+</code>
+
+**Validation Metric:** The terminal will output the average MB/s. 
+  * A standard Gigabit link will max out around **110 MB/s**. 
+  * If the speed wildly fluctuates or drops below 40 MB/s, verify that the `rsize` and `wsize` optimizations in your [[storage:nfs_fabric|FSTAB configuration]] are active.
+  * Delete the `test_saturation.img` file after the test.
+
+===== 2. Cross-VLAN Throughput (iperf3) =====
+Because the Request server (VLAN 20) and the Acquisition server (VLAN 10) communicate across the core router, you must ensure the gateway's CPU is not bottlenecking stateful firewall inspection.
+
+  1. SSH into the **Acquisition Server (VM-A)** and start the server daemon:
+     <code>sudo apt install iperf3 -y && iperf3 -s</code>
+  2. SSH into the **Request Server (VM-B)** and run the client test against VM-A's IP:
+     <code>sudo apt install iperf3 -y && iperf3 -c 192.168.10.15</code>
+
+**Validation Metric:** Throughput should reflect the maximum speed of your hypervisor's virtual switch (typically near line-rate 1Gbps or 10Gbps depending on host architecture).
+
+===== 3. Memory & Swappiness Validation =====
+To ensure the hypervisor is not aggressively moving active virtual machine memory to disk (which causes application stuttering), monitor the `swap` usage during a heavy media library scan.
+
+Execute `htop` on the bare-metal Linux hosts and guests. 
+**Validation Metric:** The `Swp` meter should remain at exactly **0K / 0%**. If swap memory is actively being used, you must either allocate more RAM to the VM or adjust the Linux kernel `vm.swappiness` value to `10` in `sysctl.conf`.

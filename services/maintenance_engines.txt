@@ -1,0 +1,83 @@
+====== Cleanuparr & ByParr Maintenance Engines ======
+
+Because this ecosystem utilizes public trackers, automated torrent clients can easily become paralyzed by dead swarms (0 seeders) or "hit-and-run" ratio limits. To maintain a zero-touch environment, two distinct maintenance engines must be deployed on the Acquisition Server (VM-A).
+
+===== Part 1: Cleanuparr (Native System Daemon) =====
+Cleanuparr is a Python-based utility that actively monitors qBittorrent and the ARR stack. If a download stalls for too long, or a completed file fails to import properly, Cleanuparr deletes the file and instructs the ARR app to search for a new, healthier release.
+
+==== 1. Virtual Environment Execution ====
+To prevent Python dependency conflicts with the underlying Ubuntu OS, Cleanuparr must be executed in an isolated virtual environment.
+
+<file bash>
+sudo apt install python3-venv -y
+mkdir /opt/cleanuparr && cd /opt/cleanuparr
+python3 -m venv venv
+source venv/bin/activate
+pip install cleanuparr
+</file>
+
+==== 2. Systemd Service Orchestration ====
+Create a native background daemon to run the cleanup loop permanently.
+
+<code>
+sudo nano /etc/systemd/system/cleanuparr.service
+</code>
+
+<file bash /etc/systemd/system/cleanuparr.service>
+[Unit]
+Description=Cleanuparr Torrent Maintenance Daemon
+After=network.target qbittorrent-nox.service
+
+[Service]
+Type=simple
+User=qbituser
+Group=qbituser
+WorkingDirectory=/opt/cleanuparr
+ExecStart=/opt/cleanuparr/venv/bin/python /opt/cleanuparr/venv/bin/cleanuparr --config /opt/cleanuparr/config.yml
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
+</file>
+
+Activate the service:
+<code>
+sudo systemctl daemon-reload
+sudo systemctl enable --now cleanuparr
+</code>
+
+===== Part 2: ByParr (Dockerized Synchronization) =====
+ByParr performs deep-state synchronization. It ensures that if you manually delete a movie from Plex, the file is physically removed from the NAS, and Radarr's database is updated to "Unmonitored" so it doesn't automatically redownload the file.
+
+Because ByParr does not require native host networking, it is deployed inside an isolated Docker container.
+
+==== 1. Docker Runtime Deployment ====
+Execute the container deployment via `docker-compose`.
+
+<code>
+sudo nano /opt/byparr/docker-compose.yml
+</code>
+
+<file yaml /opt/byparr/docker-compose.yml>
+version: '3.8'
+services:
+  byparr:
+    image: byparr/byparr:latest
+    container_name: byparr
+    environment:
+      - PUID=1000 # Matches your mapped media user UID
+      - PGID=1000 # Matches your mapped media group GID
+      - TZ=America/New_York
+    volumes:
+      - /opt/byparr/config:/config
+      - /mnt/data:/mnt/data # Direct storage fabric map
+    restart: unless-stopped
+</file>
+
+<code>
+cd /opt/byparr
+sudo docker-compose up -d
+</code>
+
+**Next Step:** Move to the DMZ (VLAN 20) and deploy the user-facing request interface in [[services:media_requests|Overseerr Request Server]].

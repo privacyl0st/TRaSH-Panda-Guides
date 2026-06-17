@@ -1,0 +1,39 @@
+====== NAS Array Initialization & Shared Folders ======
+
+This task configures the central repository for the ecosystem's data assets and media library. While this blueprint references a Synology environment, any prosumer NAS or custom-built DIY storage array with a minimum of four drive bays is functionally compliant.
+
+===== 1. Physical Interface Mapping =====
+To preserve network layer isolation, split your physical patch cables across distinct switch access ports:
+  * **NIC 1 (VLAN 10 Management Pipeline):** Assign a static IP address within the ''192.168.10.0/24'' subnet. Connect this interface to a switch port untagged for VLAN 10. This port is your exclusive administrative access path for dashboards, updates, and Veeam targets.
+  * **NIC 2 (VLAN 50 Isolated Storage Fabric):** Assign a static IP address within the ''10.0.50.0/24'' subnet. Connect this interface to a switch port dedicated exclusively to the unroutable storage backplane. **Do not configure a Default Gateway.**
+
+===== 2. RAID Volume and File System Provisioning =====
+Following the physical expansion of your NAS, the underlying disk schema must be consolidated into a high-throughput, fault-tolerant target tailored for concurrent read/write application patterns.
+
+  - Navigate to Storage Manager → Storage Pool Create (or your platform's equivalent).
+  - Select **RAID 5** (or Synology Hybrid RAID [SHR-1] with single-disk parity). This balances optimal write performance with high disk-fault tolerance.
+  - Allocate your mechanical storage drives to the pool (e.g., 4x 12TB drives yields ~36TB usable space).
+  - Deploy the parent volume using the **Btrfs** file system (or ZFS). 
+  - //Rationale: Advanced copy-on-write file systems are mandatory to unlock self-healing metadata (bit-rot protection) and low-overhead snapshot capabilities.//
+
+===== 3. Shared Folder Hierarchy & Atomic Pathing =====
+To prevent cross-volume fragmentation, erratic multi-volume parsing speeds, and directory tracking errors across the downstream application suite, you must aggregate your paths into a single, unified top-level shared folder.
+
+  - Navigate to Control Panel → Shared Folder → Create.
+  - Name the primary share root explicitly: **data** (initializing its path at ''/volume1/data'').
+  - **CRITICAL PERFORMANCE CHECK:** Uncheck the box for **Enable Recycle Bin**. 
+  - //Rationale: Because torrent clients frequently write and purge temporary data blocks, an invisible recycle bin will rapidly exhaust your storage pools and fragment disk blocks.//
+
+===== 4. Local Directory Structures =====
+Launch an SSH session to the NAS (or use the built-in File Station app) to generate the standardized, lower-case directory taxonomy required to lock down automation tracking paths:
+
+<file bash>
+/volume1/data/
+├── torrents/
+├── media/
+│   ├── tv/
+│   ├── movies/
+│   └── music/
+</file>
+
+**Next Step:** Export this data path securely in [[storage:nfs_fabric|NFS Fabric & Endpoint Mounting]].

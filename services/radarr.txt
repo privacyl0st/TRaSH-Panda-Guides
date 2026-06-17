@@ -1,0 +1,37 @@
+====== Radarr (Movie Acquisition & Management) ======
+
+Radarr handles the automated lifecycle of cinematic content. While visually identical to Sonarr, its internal database handles singular, massive files rather than nested episodic structures. It operates on the Acquisition Server (VM-A) and listens on **TCP Port 7878**.
+
+===== 1. Initialization =====
+Following installation, navigate to **Settings → General** to retrieve your API key for Prowlarr and Overseerr integration.
+
+Navigate to **Settings → Media Management** and enforce the exact same hardlink rules utilized by Sonarr, pointing your Root Folder to `/mnt/data/media/movies/`.
+
+===== 2. Strict File Size Clamping =====
+Unlike television episodes, movie releases vary wildly in size—a 1080p Web-DL might be 3GB, while a 1080p Blu-Ray Remux could be 35GB. To prevent automated downloads from selecting bloated files, you must clamp the quality definitions.
+
+Navigate to **Settings → Quality**:
+  - Edit the maximum slider for `1080p WEBDL` to cap at ~10GB.
+  - Edit the maximum slider for `1080p BluRay` to cap at ~12GB.
+  - Edit the maximum slider for `720p WEBDL` to cap at ~4GB.
+
+//Rationale: Radarr will strictly ignore any torrent file that exceeds these megabyte-per-minute mathematical thresholds, ensuring your storage array lifespan remains predictable.//
+
+===== 3. Custom Formats & Score Prioritization =====
+To ensure Radarr downloads the most compatible video codecs for your specific hardware stack (preventing the Plex Media Server from having to live-transcode unsupported formats), implement Custom Formats.
+
+Navigate to **Settings → Custom Formats**:
+  - Create a condition for **x265 / HEVC**. Assign it a score of `+100`.
+  - Create a condition for **x264 / AVC**. Assign it a score of `+50`.
+  - Create a condition for **3D / VR**. Assign it a score of `-10000` (Hard Avoid).
+
+Apply these scores to your primary Quality Profile. Radarr will now actively hunt for H.265 encoded files first, falling back to H.264 only if an optimized version does not exist on the trackers.
+
+===== 4. Download Client Integration =====
+Navigate to **Settings → Download Clients**:
+  - Add qBittorrent.
+  - **Host:** `localhost`
+  - **Port:** `8023`
+  - **Category:** `movies-radarr`
+
+**Next Step:** Complete the acquisition stack with [[services:lidarr|Lidarr (Audio Acquisition)]].

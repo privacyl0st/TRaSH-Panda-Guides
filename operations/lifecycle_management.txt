@@ -1,0 +1,53 @@
+====== Application Lifecycle Management (Updates) ======
+
+While the base operating systems handle their own security patches via the configurations in [[compute:linux_baselines|Unattended Upgrades]], the application layer requires manual, sequenced updates to prevent breaking API dependencies between Prowlarr, Sonarr, and Overseerr.
+
+===== 1. The Native Daemons (Plex, NGINX, qBittorrent) =====
+Applications installed via standard Linux `apt` repositories can be updated natively. 
+
+  * **Frequency:** Monthly.
+  * **Execution:** Run `sudo apt update && sudo apt upgrade -y` on the respective hosts (Media Engine, Edge Proxy, Acquisition Server).
+  * **Validation:** For Plex, ensure hardware transcoding is still active post-update, as kernel upgrades can occasionally unhook the NVIDIA drivers.
+
+===== 2. The ARR Suite (.NET Binaries) =====
+Applications installed directly into the `/opt/` directory (Sonarr, Radarr, Lidarr, Prowlarr) manage their own internal update branches.
+
+  * **Frequency:** Bi-weekly (or as notified in the application UI).
+  * **Execution:**
+    1. Log into the specific application WebUI.
+    2. Navigate to **System → Updates**.
+    3. Click **Install Latest**.
+  * **Architectural Guardrail:** Do NOT update all ARR applications simultaneously. Update Prowlarr first, verify indexer connectivity, and then update Sonarr/Radarr. 
+
+===== 3. Docker Containers (Unmanic, ByParr) =====
+Docker images do not update themselves automatically unless paired with a tool like Watchtower (which is not recommended for destructive pipelines like Unmanic).
+
+  * **Frequency:** Monthly.
+  * **Execution (Unmanic / Brawn Host):**
+    <file bash>
+    sudo docker pull josh5/unmanic:latest
+    sudo docker stop unmanic
+    sudo docker rm unmanic
+    # Re-run the deployment string from [[services:unmanic]]
+    </file>
+  * **Execution (ByParr / Acquisition Host):**
+    <file bash>
+    cd /opt/byparr
+    sudo docker-compose pull
+    sudo docker-compose up -d
+    </file>
+  * **Cleanup:** Run `sudo docker image prune -f` to delete old, dangling container images and free up NVMe space.
+
+===== 4. Node.js Applications (Overseerr) =====
+Overseerr was cloned directly from GitHub and built locally using Node.js.
+
+  * **Frequency:** Quarterly.
+  * **Execution (Requests Host VM-B):**
+    <file bash>
+    sudo systemctl stop overseerr
+    cd /opt/overseerr
+    git pull
+    npm install
+    npm run build
+    sudo systemctl start overseerr
+    </file>

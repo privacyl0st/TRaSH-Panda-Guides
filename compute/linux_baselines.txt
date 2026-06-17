@@ -1,0 +1,37 @@
+====== Universal Linux Host Baseline Tuning ======
+
+Apply these baseline configurations immediately across all Linux hosts—including the bare-metal Media Server (Plex), the virtualized Acquisition Server (ARR Stack), the virtualized Requests Server (Overseerr), and the Raspberry Pi 5 Edge Proxy node—to unify their behavior under the management plane.
+
+===== Kernel Performance Profiling =====
+Open the primary system kernel configuration file (''/etc/sysctl.conf'') on each Linux instance. 
+
+Append the following entries to enhance throughput and connection stability under high-concurrency network loads, such as concurrent media streams or automated peer-to-peer data transfers:
+
+<file bash /etc/sysctl.conf>
+# Increase maximum open files limits for handling vast media collections
+fs.file-max = 2097152
+
+# Enhance the network stack's capacity for memory allocation
+net.core.rmem_max = 16777216
+net.core.wmem_max = 16777216
+</file>
+
+Apply these parameters instantly to your active runtime environment without requiring a system restart by executing:
+<code>
+sudo sysctl -p
+</code>
+
+===== Non-Interactive System Update Behavior =====
+To prevent unexpected application interruptions or unplanned reboots during active operational hours, modify your automated package management rules.
+
+  - Open the unattended-upgrades configuration file:
+<code>
+sudo nano /etc/apt/apt.conf.d/50unattended-upgrades
+</code>
+
+  - Locate the automatic reboot statement and change the value explicitly to ''false'':
+<file bash /etc/apt/apt.conf.d/50unattended-upgrades>
+Unattended-Upgrade::Automatic-Reboot "false";
+</file>
+
+**Architectural Note:** Hard-coding this parameter to ''false'' guarantees that security patches are downloaded and staged safely, but critical system components are only rebooted during your manually scheduled, documented infrastructure maintenance windows.

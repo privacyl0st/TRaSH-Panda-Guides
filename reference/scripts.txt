@@ -1,0 +1,87 @@
+====== Core Automation Scripts ======
+
+This repository centralizes all bash scripts utilized for Day-2 background operations and Disaster Recovery orchestration. 
+
+These scripts should be saved locally on the respective Linux hosts and made executable using `chmod +x <filename>`.
+
+===== Veeam DR Hook Scripts (VM-A) =====
+Executed by Veeam CE to gracefully pause databases before taking an image-level snapshot. Required by [[operations:veeam_dr]].
+
+==== veeam_pre_job.sh ====
+<file bash /opt/scripts/veeam_pre_job.sh>
+#!/bin/bash
+# Pre-Freeze Application Quiescence
+echo "Dropping NordVPN Kill-switch..."
+nordvpn set killswitch off
+nordvpn disconnect
+
+echo "Stopping ARR Stack systemd services..."
+systemctl stop prowlarr radarr sonarr lidarr qbittorrent-nox cleanuparr
+
+echo "Pausing Docker maintenance containers..."
+docker pause byparr
+exit 0
+</file>
+
+==== veeam_post_job.sh ====
+<file bash /opt/scripts/veeam_post_job.sh>
+#!/bin/bash
+# Post-Thaw Application Recovery
+echo "Re-establishing NordVPN..."
+nordvpn connect
+nordvpn set killswitch on
+
+echo "Restarting ARR Stack..."
+systemctl start prowlarr radarr sonarr lidarr qbittorrent-nox cleanuparr
+
+echo "Unpausing Docker maintenance containers..."
+docker unpause byparr
+exit 0
+</file>
+
+===== VPN Watchdog Engine (VM-A) =====
+A self-healing loop that tests the `nordlynx` interface for silent drops. Required by [[operations:automated_maintenance]].
+
+==== vpn_watchdog.sh ====
+<file bash /usr/local/bin/vpn_watchdog.sh>
+#!/bin/bash
+# Test external routing via the VPN interface
+if ! ping -I nordlynx -c 3 1.1.1.1 > /dev/null 2>&1; then
+    echo "$(date): Silent drop detected. Initiating recovery sequence."
+    systemctl stop qbittorrent-nox
+    nordvpn disconnect
+    sleep 5
+    nordvpn connect
+    sleep 10
+    systemctl start qbittorrent-nox
+else
+    echo "$(date): NordLynx tunnel is healthy."
+fi
+</file>
+
+===== Edge Proxy Backup Engine (VM-D) =====
+Securely packages NGINX configurations and pushes them to the NAS. Required by [[operations:automated_maintenance]].
+
+==== edge_backup.sh ====
+<file bash /usr/local/bin/edge_backup.sh>
+#!/bin/bash
+BACKUP_DATE=$(date +%F)
+BACKUP_DIR="/tmp/edge_backup_$BACKUP_DATE"
+TARGET_NFS="/mnt/data/backups/edge_proxy"
+
+mkdir -p $BACKUP_DIR
+echo "Copying configurations..."
+cp -R /etc/nginx $BACKUP_DIR/
+cp -R /etc/letsencrypt $BACKUP_DIR/
+
+echo "Compressing..."
+tar -czf $BACKUP_DIR.tar.gz -C /tmp edge_backup_$BACKUP_DATE
+
+echo "Moving to Storage Fabric..."
+# Assumes NFS is mounted to /mnt/data on the Edge Proxy
+mv $BACKUP_DIR.tar.gz $TARGET_NFS/
+
+echo "Cleaning up temporary files..."
+rm -rf $BACKUP_DIR
+echo "Backup complete."
+</file>
